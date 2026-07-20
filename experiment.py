@@ -150,7 +150,6 @@ def build_plan(args) -> Plan:
         "partition": args.partition,
         "cluster": args.cluster,
         "cpus_per_task": args.cpus,
-        "mem_gb": args.memory_gb,
     }
     if args.account:
         common["account"] = args.account
@@ -218,7 +217,6 @@ def main() -> None:
     parser.add_argument("--account")
     parser.add_argument("--cluster", default="wice")
     parser.add_argument("--time", default="00:30:00")
-    parser.add_argument("--memory-gb", type=int, default=4)
     parser.add_argument("--cpus", type=int, default=1)
     parser.add_argument("--email", help="Email address for Slurm failure notifications")
     parser.add_argument("--submit", action="store_true")
