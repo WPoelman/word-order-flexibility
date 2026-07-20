@@ -44,7 +44,7 @@ def load_conllu(paths: Iterable[str | Path], limit: int | None = None) -> list:
 
 
 def surface_sentences(ud_sentences: Iterable) -> list[list[str]]:
-    """Extract case-sensitive words while omitting UD punctuation tokens."""
+    """Extract case-sensitive integer-ID UD words while omitting punctuation."""
     return [
         [token["form"] for token in sentence if isinstance(token.get("id"), int) and token.get("upos") != "PUNCT"]
         for sentence in ud_sentences

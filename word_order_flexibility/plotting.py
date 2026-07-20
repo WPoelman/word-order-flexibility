@@ -166,10 +166,13 @@ def _validation_panel(ax, all_results: pd.DataFrame, futrell_results: pd.DataFra
     data = all_results[["Language", FLEX, target, TTR]].dropna().copy()
     data["x"] = residualize(data[target], data[TTR])
     data["y"] = residualize(data[FLEX], data[TTR])
-    selected = futrell_results[["Language", FLEX, target, TTR]].dropna().copy()
+    futrell_languages = set(futrell_results["Language"])
+    selected = all_results[all_results["Language"].isin(futrell_languages)][
+        ["Language", FLEX, target, TTR]
+    ].dropna().copy()
     selected["x"] = residualize(selected[target], selected[TTR])
     selected["y"] = residualize(selected[FLEX], selected[TTR])
-    other = data[~data["Language"].isin(set(selected["Language"]))]
+    other = data[~data["Language"].isin(futrell_languages)]
 
     ax.scatter(
         other["x"],

@@ -53,6 +53,8 @@ uv run word-flexibility ud ud/ud-treebanks-v2.17/UD_English-EWT --sentences 1000
 The implementation excludes punctuation tokens, `punct` dependencies, and
 dependencies headed by punctuation. Both frequency-weighted and unweighted UD
 aggregations are returned.
+Flexibility and TTR use integer-ID UD words; multiword-token range rows and
+empty nodes are not counted as additional observations.
 
 ## Analysis
 

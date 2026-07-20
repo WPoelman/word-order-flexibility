@@ -39,6 +39,19 @@ def test_matches_original_metric_snapshot():
     assert surface_sentences(sentences)[2][0] == "Today"
 
 
+def test_surface_sentences_exclude_multiword_ranges_and_empty_nodes():
+    sample = """# text = can't go.
+1-2\tcan't\t_\t_\t_\t_\t_\t_\t_\t_
+1\tca\tcan\tAUX\t_\t_\t3\taux\t_\t_
+2\tn't\tnot\tPART\t_\t_\t3\tadvmod\t_\t_
+3\tgo\tgo\tVERB\t_\t_\t0\troot\t_\t_
+3.1\tghost\tghost\tX\t_\t_\t_\t_\t_\t_
+4\t.\t.\tPUNCT\t_\t_\t3\tpunct\t_\t_
+
+"""
+    assert surface_sentences(conllu.parse(sample)) == [["ca", "n't", "go"]]
+
+
 def test_descriptive_ud_names_distinguish_aggregations():
     ud = calculate_ud_metrics(conllu.parse(SAMPLE))
     assert "head_direction_entropy_weighted" in ud
