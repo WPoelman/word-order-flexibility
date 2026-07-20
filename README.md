@@ -72,6 +72,21 @@ produces a decay-profile plot.
 
 Install the cluster dependencies and inspect the [planit](https://github.com/WPoelman/planit) graph:
 
+Paper plots require a TeX installation because Matplotlib uses LaTeX for their
+text. Check for it before submitting:
+
+```bash
+command -v latex
+latex --version
+module spider texlive
+```
+
+If TeX is provided as a module, load it before submission:
+
+```bash
+module load texlive 
+```
+
 ```bash
 uv sync --group cluster
 
@@ -96,6 +111,13 @@ uv run --group cluster python experiment.py \
 The plan runs the broad and Futrell 1,000-sentence samples and the fixed-sample
 1,000/2,000/5,000/10,000-sentence study. Paper figures, analyses, and tables are
 written to `results/paper`.
+
+If TeX is unavailable on the cluster, copy the completed `results` folder  and
+generate the paper artifacts on a machine with TeX installed.
+
+```bash
+uv run word-flexibility paper results
+```
 
 ## Tests
 

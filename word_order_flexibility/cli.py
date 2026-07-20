@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .analysis import correlations
 from .flexibility import flexibility_profile, word_order_flexibility
-from .plotting import profile_plot, validation_plot
+from .plotting import generate_paper_artifacts, profile_plot, validation_plot
 from .text import read_sentences
 from .ud import calculate_ud_metrics, load_conllu, surface_sentences
 
@@ -78,6 +78,18 @@ def analyze_command(args) -> None:
         profile_plot(rows, output_dir / "decay_profile.png")
 
 
+def paper_command(args) -> None:
+    root = Path(args.results_dir)
+    output = Path(args.output_dir) if args.output_dir else root / "paper"
+    generate_paper_artifacts(
+        str(root / "all-1000" / "results.csv"),
+        str(root / "futrell-1000" / "results.csv"),
+        str(root / "sentence-sizes" / "results.csv"),
+        args.bakker,
+        str(output),
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="word-flexibility")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -111,6 +123,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Plot raw instead of TTR-controlled values",
     )
     analysis_parser.set_defaults(function=analyze_command)
+
+    paper_parser = commands.add_parser("paper", help="Generate all paper artifacts")
+    paper_parser.add_argument("results_dir", help="Experiment output directory")
+    paper_parser.add_argument(
+        "--bakker",
+        default="data/bakker-flexibility-metrics.csv",
+        help="Bakker ratings CSV",
+    )
+    paper_parser.add_argument("--output-dir", help="Default: RESULTS_DIR/paper")
+    paper_parser.set_defaults(function=paper_command)
     return parser
 
 
