@@ -1,0 +1,87 @@
+Language,Flexibility,Consistency,Consequence
+Abaza,0.20,0.80,0.67
+Abkhaz,0.50,0.60,0.81
+Albanian,0.50,0.56,0.97
+Andi,0.60,1.00,1.00
+Archi,0.10,1.00,1.00
+Armenian,0.40,0.56,0.94
+Avar,0.60,1.00,1.00
+Bashkir,0.10,1.00,1.00
+Basque,0.60,0.56,0.89
+Botlikh,0.60,1.00,1.00
+Breton,0.20,0.60,1.00
+Bulgarian,0.60,0.11,0.67
+Byelorussian,0.70,0.20,0.50
+Catalan,0.40,0.40,0.67
+Chamalal,0.60,1.00,1.00
+Chechen,0.10,1.00,1.00
+Chuvash,0.10,1.00,1.00
+Classical Armenian,0.80,0.00,1.00
+Classical Greek,0.60,0.33,0.65
+Cornish,0.20,0.60,1.00
+Crimean Tatar,0.20,1.00,1.00
+Danish,0.30,0.00,1.00
+Dargwa,0.50,1.00,1.00
+Dido,0.10,1.00,1.00
+Dutch,0.40,0.11,0.67
+English,0.40,0.00,1.00
+Estonian,0.40,0.20,0.27
+Faroese,0.40,0.20,0.93
+Finnish,0.60,0.11,0.49
+French,0.10,0.40,1.00
+Frisian,0.30,0.11,0.87
+Friulian,0.10,0.40,1.00
+Galician,0.20,0.40,0.67
+Georgian,0.50,0.75,1.00
+German,0.40,0.11,0.67
+Godoberi,0.40,1.00,1.00
+Gothic,0.70,0.40,0.94
+Greek,0.60,0.40,0.65
+Hinukh,0.00,1.00,1.00
+Icelandic,0.40,0.40,1.00
+Ingrian,0.50,0.11,0.29
+Ingush,0.00,1.00,1.00
+Irish,0.20,0.60,0.71
+Italian,0.30,0.40,0.86
+Kalmyk,0.10,1.00,1.00
+Khinalug,0.00,1.00,1.00
+Kirmanji,0.10,0.33,0.67
+Komi-Zyrian,0.70,0.11,0.34
+Komi-Permyak,0.40,0.78,1.00
+Kumyk,0.10,1.00,1.00
+Ladin,0.10,0.40,1.00
+Lak,0.00,1.00,1.00
+Latin,0.90,0.14,0.50
+Latvian,0.50,0.00,1.00
+Lezgi,0.10,1.00,1.00
+Lithuanian,0.30,0.11,0.14
+Livonian,0.40,0.20,0.27
+Lower Sorbian,0.40,0.33,1.00
+Luxembourgeois,0.40,0.11,0.67
+Macedonian,0.50,0.20,0.81
+Maltese,0.30,0.60,0.86
+Manx,0.30,0.78,0.87
+Mordvin,0.60,0.11,0.49
+Nogai,0.10,1.00,1.00
+Northern Saami,0.40,0.11,0.33
+Norwegian,0.40,0.20,0.93
+Polish,0.60,0.20,0.65
+Portuguese,0.30,0.40,0.86
+Romansch,0.10,0.40,1.00
+Rumanian,0.50,0.78,0.97
+Russian,0.70,0.20,0.50
+Rutul,0.30,1.00,1.00
+Sardinian,0.20,0.60,1.00
+Scottish Gaelic,0.30,0.56,0.52
+Serbo-Croatian,0.50,0.20,0.81
+Slovak,0.50,0.20,0.81
+Slovene,0.50,0.40,0.97
+Spanish,0.30,0.40,0.43
+Swedish,0.40,0.00,1.00
+Tabasaran,0.40,1.00,1.00
+Tsakhur,0.30,1.00,1.00
+Turkish,0.20,1.00,1.00
+Udmurt,0.50,0.56,0.81
+Upper Sorbian,0.60,0.50,1.00
+Vepsian,0.80,0.11,0.50
+Yiddish,0.50,0.00,1.00

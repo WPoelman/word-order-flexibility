@@ -1,0 +1,48 @@
+[project]
+name = "word-order-flexibility"
+version = "0.1.0"
+description = "Approximating word order flexibility without syntactic annotations."
+authors = [{ name = "Wessel Poelman" }]
+readme = "README.md"
+license = { file = "LICENSE" }
+keywords = ["computational linguistics", "word order", "linguistic typology", "universal dependencies"]
+requires-python = ">=3.11"
+dependencies = [
+  "conllu>=6.0",
+  "matplotlib>=3.8",
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "scipy>=1.12",
+  "seaborn>=0.13",
+]
+
+[project.urls]
+Repository = "https://github.com/WPoelman/word-order-flexibility"
+Issues = "https://github.com/WPoelman/word-order-flexibility/issues"
+
+[project.scripts]
+word-flexibility = "word_order_flexibility.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["word_order_flexibility"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.12",
+]
+cluster = [
+  "planit @ git+https://github.com/WPoelman/planit.git@v1.2.0",
+  "submitit>=1.5",
+]
+
