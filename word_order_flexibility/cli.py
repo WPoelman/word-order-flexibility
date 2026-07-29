@@ -44,7 +44,8 @@ def _metric_results(sentences, args):
 
 
 def text_command(args) -> None:
-    sentences = read_sentences(args.input, input_format=args.format, lowercase=not args.keep_case)
+    sentences = read_sentences(args.input, input_format=args.format, lowercase=not args.keep_case, 
+                               apply_splitter=args.apply_splitter)
     _write_json(_metric_results(sentences, args), args.output)
 
 
@@ -97,6 +98,9 @@ def build_parser() -> argparse.ArgumentParser:
     text_parser = commands.add_parser("text", help="Calculate F(lambda) from raw text")
     text_parser.add_argument("input")
     text_parser.add_argument("--format", choices=("text", "lines", "tokenized"), default="text")
+    text_parser.add_argument("--apply-splitter", choices=("chinese", "japanese", "korean", "flores-spm", "default"), default="default",
+                             help="Use this flag to split Chinese, Japanese, and Korean characters into separate tokens. \
+                             The flores-spm option uses the SentencePiece model trained on FLORES-200 data to tokenize all languages.")
     text_parser.add_argument("--keep-case", action="store_true")
     text_parser.add_argument("--pairs", action="store_true", help="Include qualifying pair-level values")
     text_parser.add_argument("--output")
