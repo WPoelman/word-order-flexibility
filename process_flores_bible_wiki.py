@@ -9,6 +9,24 @@ import json
 import importlib.resources as pkg_resources
 from texieve import MonolingualLoader
 from texieve.data import resources
+from word_order_flexibility.plotting import _set_style, _regression, residualize
+import matplotlib.pyplot as plt
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+GREEN = "#1B7837"
+RED = "#8E1B1B"
+SLATE = "#4C566A"
+MID_GRAY = "#9A9A9A"
+LIGHT_GRAY = "#F2F2F2"
+AXIS_LABEL_SIZE = 22
+TICK_LABEL_SIZE = 15
+ANNOTATION_SIZE = 18
+LEGEND_SIZE = 18
+DECAYS = (0.25, 0.5, 0.75, 1.0)
+SIZES = (1000, 2000, 5000, 10000)
+FLEX = "F_lambda_050"
+TTR = "type_token_ratio"
 
 SCRIPT_TO_TOKENIZER_MAPPING = {}
 
@@ -84,34 +102,47 @@ def get_script_mapping():
         else:
             SCRIPT_TO_TOKENIZER_MAPPING[code] = "default"
             
+def process_code(code: str):
+    if code in [Path(f).stem for f in glob("data/flores/*.txt")]:
+        subprocess.run(f"""uv run word-flexibility text data/flores/{code}.txt \
+                --apply-splitter {SCRIPT_TO_TOKENIZER_MAPPING[code]} \
+                --format lines \
+                --output results/flores/{code}.json""", 
+            shell=True,
+            check=True,
+        )
+    if code in [Path(f).stem for f in glob("data/taxi-1500-pre-train/*.txt")]: 
+        subprocess.run(f"""uv run word-flexibility text data/taxi-1500-pre-train/{code}.txt \
+                --format tokenized \
+                --output results/bible/{code}.json""",
+            shell=True,
+            check=True,
+        )
+    if code in [Path(f).stem for f in glob("data/wikipedia/*.txt")]:
+        subprocess.run(f"""uv run word-flexibility text data/wikipedia/{code}.txt \
+                --format text \
+                --apply-splitter {SCRIPT_TO_TOKENIZER_MAPPING[code]} \
+                --output results/wikipedia/{code}.json""",
+            shell=True,
+            check=True,
+        )
+    return code
+            
 def run():
     get_script_mapping()
     ud_codes = get_ud_codes()
-    for code in tqdm(ud_codes):
-        if code in [Path(f).stem for f in glob("data/flores/*.txt")]:
-            subprocess.run(f"""uv run word-flexibility text data/flores/{code}.txt \
-                    --apply-splitter {SCRIPT_TO_TOKENIZER_MAPPING[code]} \
-                    --format lines \
-                    --output results/flores/{code}.json""", 
-                shell=True,
-                check=True,
-            )
-        if code in [Path(f).stem for f in glob("data/taxi-1500-pre-train/*.txt")]: 
-            subprocess.run(f"""uv run word-flexibility text data/taxi-1500-pre-train/{code}.txt \
-                    --format tokenized \
-                    --output results/bible/{code}.json""",
-                shell=True,
-                check=True,
-            )
-        if code in [Path(f).stem for f in glob("data/wikipedia/*.txt")]:
-            subprocess.run(f"""uv run word-flexibility text data/wikipedia/{code}.txt \
-                    --format text \
-                    --apply-splitter {SCRIPT_TO_TOKENIZER_MAPPING[code]} \
-                    --output results/wikipedia/{code}.json""",
-                shell=True,
-                check=True,
-            )
-        
+    
+    max_workers = 7  # tune based on CPU cores / memory
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(process_code, code): code for code in ud_codes}
+        for future in tqdm(as_completed(futures), total=len(futures)):
+            code = futures[future]
+            try:
+                future.result()
+            except subprocess.CalledProcessError as e:
+                print(f"Failed on {code}: {e}")
+
 def compile_results():
     rows = []
     ud_codes = get_ud_codes()
@@ -120,15 +151,15 @@ def compile_results():
         try:
             flores_result = json.load(open(f"results/flores/{code}.json", "r", encoding="utf-8"))
         except:
-            flores_result = {"sentences": None, "flexibility": None, "lambda": None, "min_pair_count": None, "qualifying_pairs": None}
+            flores_result = {"sentences": 0.5, "flexibility": 0.5, "lambda": 0.5, "min_pair_count": 0.5, "qualifying_pairs": 0.5, "ttr": 0.5}
         try:
             bible_result = json.load(open(f"results/bible/{code}.json", "r", encoding="utf-8"))
         except:
-            bible_result = {"sentences": None, "flexibility": None, "lambda": None, "min_pair_count": None, "qualifying_pairs": None}
+            bible_result = {"sentences": 0.5, "flexibility": 0.5, "lambda": 0.5, "min_pair_count": 0.5, "qualifying_pairs": 0.5, "ttr": 0.5}
         try:
             wikipedia_result = json.load(open(f"results/wikipedia/{code}.json", "r", encoding="utf-8"))
         except:
-            wikipedia_result = {"sentences": None, "flexibility": None, "lambda": None, "min_pair_count": None, "qualifying_pairs": None}
+            wikipedia_result = {"sentences": 0.5, "flexibility": 0.5, "lambda": 0.5, "min_pair_count": 0.5, "qualifying_pairs": 0.5, "ttr": 0.5}
         rows.append({
             "code": code,
             "language": ud_codes[code],
@@ -140,22 +171,44 @@ def compile_results():
             "flores_flexibility": flores_result["flexibility"],
             "bible_flexibility": bible_result["flexibility"],
             "wikipedia_flexibility": wikipedia_result["flexibility"],
-            "flores_lambda": flores_result["lambda"],
-            "bible_lambda": bible_result["lambda"],
-            "wikipedia_lambda": wikipedia_result["lambda"],
             "flores_min_pair_count": flores_result["min_pair_count"],
             "bible_min_pair_count": bible_result["min_pair_count"],
             "wikipedia_min_pair_count": wikipedia_result["min_pair_count"],
             "flores_qualifying_pairs": flores_result["qualifying_pairs"],
             "bible_qualifying_pairs": bible_result["qualifying_pairs"],
             "wikipedia_qualifying_pairs": wikipedia_result["qualifying_pairs"],
+            "flores_ttr": flores_result["ttr"],
+            "bible_ttr": bible_result["ttr"],
+            "wikipedia_ttr": wikipedia_result["ttr"],
         })
         
     df = pd.DataFrame(rows)
     df.to_csv("data/combined_results.csv", index=False, encoding="utf-8")
+    
+def validation_plot(df: pd.DataFrame, output: str | Path, *, control_ttr: bool = True) -> None:
+    """Plot flexibility against HDE and ROE for the public CSV interface."""
+    _set_style()
+    fig, axes = plt.subplots(1, 3, figsize=(12, 3.6), constrained_layout=True)
+    for ax, target, color in zip(axes, ("bible", "wikipedia", "flores"), (RED, GREEN, SLATE), strict=True):
+        target_flexibility = f"{target}_flexibility"
+        data = df[["ud_flexibility", target_flexibility, f"{target}_ttr"]].astype(float).dropna()
+        x, y = data[target_flexibility].to_numpy(), data["ud_flexibility"].to_numpy()
+        if control_ttr:
+            x = residualize(x, data[f"{target}_ttr"])
+            y = residualize(y, data[f"{target}_ttr"])
+        _regression(ax, x, y, color, "Linear fit")
+        suffix = " residual" if control_ttr else ""
+        ax.set_xlabel("WPA on " + target + suffix)
+        ax.set_ylabel("WPA on UD" + suffix)
+    fig.savefig(output, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
     
 if __name__ == "__main__":
     # save_flores()
     # save_wikipedias()
     run()
     compile_results()
+
+    df = pd.read_csv("data/combined_results.csv")
+    validation_plot(df, "data/validation_plot.png", control_ttr=False)
