@@ -79,7 +79,7 @@ def read_sentences(
     sentences = []
     for line in text.splitlines():
         if input_format == "tokenized":
-            words = [word for token in line.split() for word in WORD_RE.findall(token)]
+            words = _remove_punct(line).split()
             if lowercase:
                 words = [word.casefold() for word in words]
         else:
