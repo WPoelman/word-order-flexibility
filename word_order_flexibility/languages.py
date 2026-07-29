@@ -801,7 +801,7 @@ UD_MAPPING = {
     "por_Latn": "Portuguese",
     "ron_Latn": "Romanian",
     "rus_Cyrl": "Russian",
-    "cls_Latn": "Sanskrit Classical",
+    # "cls_Latn": "Sanskrit Classical",
     "vsn_Latn": "Sanskrit Vedic",
     "gla_Latn": "Scottish Gaelic",
     "srp_Latn": "Serbian",
