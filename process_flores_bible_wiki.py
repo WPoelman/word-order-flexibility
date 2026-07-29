@@ -3,6 +3,8 @@ from collections import defaultdict
 import subprocess
 from tqdm import tqdm
 import pandas as pd
+from glob import glob
+from pathlib import Path
 import json
 import importlib.resources as pkg_resources
 from texieve import MonolingualLoader
@@ -43,6 +45,8 @@ def save_wikipedias():
     ud_codes = get_ud_codes()
     for code in tqdm(ud_codes, desc="Processing Wikipedia datasets"):
         iso = code.split("_")[0]
+        if code in [Path(f).stem for f in glob("data/wikipedia/*.txt")]:
+            continue
         script = code.split("_")[1]
         if script in wikipedias.get(iso, {}).get("scripts", []):
             wiki_code = wikipedias[iso]["bcp_47_code"]
@@ -52,13 +56,12 @@ def save_wikipedias():
                 try:
                     loader = MonolingualLoader(iso)
                     loader.load(sources=["wiki"], streaming=True)
-                    loader.pre_filter(script_regex=True)
-                    loader.deduplicate(exact_match=True, min_hash=True)
+         #           loader.pre_filter(script_regex=True)
+          #          loader.deduplicate(exact_match=True, min_hash=True)
                     data = loader.data['train'].shuffle()
                 except:
                     print(f"Failed to load {iso} ({wiki_code})")
                     continue
-            
             data = data.take(1000)
             data = [i['text'] for i in data]
             with open(f'data/wikipedia/{code}.txt', "w", encoding="utf-8") as outfile:
@@ -85,23 +88,25 @@ def run():
     get_script_mapping()
     ud_codes = get_ud_codes()
     for code in tqdm(ud_codes):
-        subprocess.run(f"""uv run word-flexibility text data/flores/{code}.txt \
-                    --apply-char-splitter {SCRIPT_TO_TOKENIZER_MAPPING[code]} \
+        if code in [Path(f).stem for f in glob("data/flores/*.txt")]:
+            subprocess.run(f"""uv run word-flexibility text data/flores/{code}.txt \
+                    --apply-splitter {SCRIPT_TO_TOKENIZER_MAPPING[code]} \
                     --format lines \
                     --output results/flores/{code}.json""", 
                 shell=True,
                 check=True,
             )
-    
-        subprocess.run(f"""uv run word-flexibility text data/taxi-1500-pre-train/{code}.txt \
+        if code in [Path(f).stem for f in glob("data/taxi-1500-pre-train/*.txt")]: 
+            subprocess.run(f"""uv run word-flexibility text data/taxi-1500-pre-train/{code}.txt \
                     --format tokenized \
                     --output results/bible/{code}.json""",
                 shell=True,
                 check=True,
             )
-        subprocess.run(f"""uv run word-flexibility text data/wikipedia/{code}.txt \
+        if code in [Path(f).stem for f in glob("data/wikipedia/*.txt")]:
+            subprocess.run(f"""uv run word-flexibility text data/wikipedia/{code}.txt \
                     --format text \
-                    --apply-char-splitter {SCRIPT_TO_TOKENIZER_MAPPING[code]} \
+                    --apply-splitter {SCRIPT_TO_TOKENIZER_MAPPING[code]} \
                     --output results/wikipedia/{code}.json""",
                 shell=True,
                 check=True,
@@ -152,5 +157,5 @@ def compile_results():
 if __name__ == "__main__":
     # save_flores()
     # save_wikipedias()
-    # run()
+    run()
     compile_results()
