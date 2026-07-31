@@ -1,7 +1,7 @@
 [project]
 name = "word-order-flexibility"
 version = "0.1.0"
-description = "Approximating word order flexibility without syntactic annotations."
+description = "Measuring word order flexibility without syntactic annotations."
 authors = [{ name = "Wessel Poelman" }]
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -14,10 +14,12 @@ dependencies = [
   "numpy>=1.26",
   "pandas>=2.2",
   "qwanqwa>=1.2.0",
-  "sacrebleu[ja,ko,zh]>=2.6.0",
+  "sacrebleu[ja,ko]>=2.6.0",
   "scipy>=1.12",
   "seaborn>=0.13",
   "sentencepiece>=0.2.2",
+  "tqdm>=4.66",
+  "wtpsplit[onnx-cpu]>=2.2,<3",
 ]
 
 [project.urls]

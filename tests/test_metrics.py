@@ -35,8 +35,22 @@ def test_tokenized_input_removes_attached_punctuation(tmp_path):
     ]
 
 
-def test_raw_text_tokenization_removes_punctuation():
+def test_raw_text_tokenization_removes_punctuation(monkeypatch):
+    monkeypatch.setattr(
+        "word_order_flexibility.text.segment_text",
+        lambda _text: ["Cats chase dogs.", "Dogs chase cats!"],
+    )
     assert tokenize_text("Cats chase dogs. Dogs chase cats!") == [
         ["cats", "chase", "dogs"],
         ["dogs", "chase", "cats"],
     ]
+
+
+def test_raw_text_uses_sentence_segmenter(monkeypatch):
+    segmenter = type(
+        "Segmenter",
+        (),
+        {"split": lambda self, _text: ["Dr. Smith left. ", "他回家了。"]},
+    )()
+    monkeypatch.setattr("word_order_flexibility.text._sentence_segmenter", lambda: segmenter)
+    assert len(tokenize_text("ignored")) == 2

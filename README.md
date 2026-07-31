@@ -1,6 +1,6 @@
 # Word-order flexibility
 
-Approximate word-order flexibility from raw text.
+Measure word-order flexibility from raw text.
 The package also implements Head Direction Entropy (HDE) and Relation Order Entropy (ROE) for validation on Universal Dependencies (UD).
 
 ## Install
@@ -16,6 +16,10 @@ uv sync
 ```bash
 uv run word-flexibility text corpus.txt
 ```
+
+Raw `text` input is segmented with WTPSplit's multilingual `sat-3l-sm`
+sentence model, which is downloaded on first use. The `lines` and `tokenized`
+formats continue to treat each non-empty line as one sentence.
 
 The default is $F(0.5)$ with lowercasing, punctuation removal, and a minimum of
 three observations per unordered pair. Input formats are ordinary `text`, one
@@ -86,7 +90,14 @@ module spider texlive
 If TeX is provided as a module, load it before submission:
 
 ```bash
-module load texlive 
+module load texlive
+```
+
+Raw Wikipedia processing also requires the WTPSplit model. Cache it once in the
+shared environment before submission:
+
+```bash
+uv run python -c "from word_order_flexibility.text import segment_text; print(segment_text('One. Two.'))"
 ```
 
 ```bash
@@ -114,12 +125,33 @@ The plan runs the broad and Futrell 1,000-sentence samples and the fixed-sample
 1,000/2,000/5,000/10,000-sentence study. Paper figures, analyses, and tables are
 written to `results/paper`.
 
-If TeX is unavailable on the cluster, copy the completed `results` folder  and
-generate the paper artifacts on a machine with TeX installed.
+FLORES, Bible, and Wikipedia inputs can be included as parallel branches:
 
 ```bash
-uv run word-flexibility paper results
+uv run --group cluster python experiment.py \
+  --corpora-only \
+  --flores-dir data/flores \
+  --bible-dir data/taxi-1500-pre-train \
+  --wikipedia-dir data/wikipedia \
+  --corpus-sentences 1000 \
+  --corpus-samples 10 \
+  --corpus-sample-sentences 1000 \
+  --output-dir results \
+  --partition batch \
+  --cluster wice \
+  --account YOUR_ACCOUNT \
+  --email YOUR_EMAIL \
+  --submit
 ```
+
+Every included language must contain at least the requested number of
+sentences. Each language is segmented once; the same in-memory sentences are
+used for the deterministic prefix and ten seeded random samples without
+replacement. Raw and separately TTR-controlled correlations, sample-level
+tables, rank reliability, and stability plots are written to
+`results/corpus-analysis`. FLORES inputs combine its `dev` and `devtest`
+splits.
+
 
 ## Tests
 

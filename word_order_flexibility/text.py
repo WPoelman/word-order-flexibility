@@ -1,13 +1,14 @@
 import re
+from functools import lru_cache
 from pathlib import Path
-from sacrebleu.tokenizers.tokenizer_zh import TokenizerZh
+
+from sacrebleu.tokenizers.tokenizer_intl import TokenizerV14International
 from sacrebleu.tokenizers.tokenizer_ja_mecab import TokenizerJaMecab
 from sacrebleu.tokenizers.tokenizer_ko_mecab import TokenizerKoMecab
-from sacrebleu.tokenizers.tokenizer_intl import TokenizerV14International
 from sacrebleu.tokenizers.tokenizer_spm import Flores200Tokenizer
+from sacrebleu.tokenizers.tokenizer_zh import TokenizerZh
 
 WORD_RE = re.compile(r"[^\W_]+(?:[’'\-][^\W_]+)*", re.UNICODE)
-SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+|\n+")
 ASIAN_PUNCT = r"([\u3001\u3002\u3008-\u3011\u3014-\u301f\uff61-\uff65\u30fb])"
 FULL_WIDTH_PUNCT = r"([\uff0e\uff0c\uff1f\uff1a\uff1b\uff01\uff02\uff08\uff09])"
 SPLITTER_MAPPING = {
@@ -18,19 +19,34 @@ SPLITTER_MAPPING = {
     "flores-spm": Flores200Tokenizer(),
 }
 
+
 # copied from sacrebleu.tokenizers.tokenizer_ter.py
 def _remove_asian_punct(sent: str) -> str:
     sent = re.sub(ASIAN_PUNCT, r" \1 ", sent)
     sent = re.sub(FULL_WIDTH_PUNCT, r" \1 ", sent)
     return sent
 
+
 def _remove_punct(sent: str) -> str:
     return re.sub(r"[\.,\?:;!\"\(\)]", "", sent)
+
+
+@lru_cache(maxsize=1)
+def _sentence_segmenter():
+    from wtpsplit import SaT
+
+    return SaT("sat-3l-sm", ort_providers=["CPUExecutionProvider"])
+
+
+def segment_text(text: str) -> list[str]:
+    """Segment raw text with the multilingual SaT sentence model."""
+    return [segment.strip() for segment in _sentence_segmenter().split(text) if segment.strip()]
+
 
 def tokenize_text(text: str, *, lowercase: bool = True, apply_splitter: str = "default") -> list[list[str]]:
     sentences = []
     tokenizer = SPLITTER_MAPPING[apply_splitter]
-    for segment in SENTENCE_BOUNDARY_RE.split(text.strip()):
+    for segment in segment_text(text):
         if apply_splitter == "flores-spm":
             segment = tokenizer(line=segment)
         else:
@@ -45,6 +61,7 @@ def tokenize_text(text: str, *, lowercase: bool = True, apply_splitter: str = "d
         if words:
             sentences.append(words)
     return sentences
+
 
 def tokenize_sentence(sentence: str, *, lowercase: bool = True, apply_splitter: str = "default") -> list[str]:
     tokenizer = SPLITTER_MAPPING[apply_splitter]
@@ -69,7 +86,7 @@ def read_sentences(
     lowercase: bool = True,
     apply_splitter: str = "default",
 ) -> list[list[str]]:
-    """Read one-sentence-per-line text, or tokenized lines."""
+    """Read raw text, one-sentence-per-line text, or tokenized lines."""
     text = Path(path).read_text(encoding="utf-8")
     if input_format == "text":
         return tokenize_text(text, lowercase=lowercase, apply_splitter=apply_splitter)
@@ -83,10 +100,7 @@ def read_sentences(
             if lowercase:
                 words = [word.casefold() for word in words]
         else:
-            # words = WORD_RE.findall(line)
             words = tokenize_sentence(line, lowercase=lowercase, apply_splitter=apply_splitter)
-            if lowercase:
-                words = [word.casefold() for word in words]
         if words:
             sentences.append(words)
     return sentences

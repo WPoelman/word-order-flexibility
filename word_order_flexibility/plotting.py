@@ -10,16 +10,17 @@ import seaborn as sns
 from scipy import stats
 
 from .analysis import residualize
+from .plot_utils import apply_paper_style, figure_size, format_decimal
 
 GREEN = "#1B7837"
 RED = "#8E1B1B"
 SLATE = "#4C566A"
 MID_GRAY = "#9A9A9A"
 LIGHT_GRAY = "#F2F2F2"
-AXIS_LABEL_SIZE = 22
-TICK_LABEL_SIZE = 15
-ANNOTATION_SIZE = 18
-LEGEND_SIZE = 18
+AXIS_LABEL_SIZE = 9
+TICK_LABEL_SIZE = 8
+ANNOTATION_SIZE = 8
+LEGEND_SIZE = 8
 DECAYS = (0.25, 0.5, 0.75, 1.0)
 SIZES = (1000, 2000, 5000, 10000)
 FLEX = "F_lambda_050"
@@ -100,29 +101,16 @@ FUTRELL_ROE_ORDER = (
 
 def _set_style() -> None:
     sns.set_theme(style="whitegrid")
-    plt.rcParams.update(
-        {
-            "font.family": "serif",
-            "font.serif": ["Times New Roman", "DejaVu Serif", "Liberation Serif"],
-            "font.size": 14,
-            "axes.labelsize": AXIS_LABEL_SIZE,
-            "axes.titlesize": 18,
-            "axes.labelweight": "normal",
-            "xtick.labelsize": TICK_LABEL_SIZE,
-            "ytick.labelsize": TICK_LABEL_SIZE,
-            "legend.fontsize": LEGEND_SIZE,
-            "figure.titlesize": 20,
-            "legend.framealpha": 1.0,
-            "text.usetex": True,
-            "text.latex.preamble": r"\usepackage{newtxtext}",
-        }
-    )
+    apply_paper_style()
 
 
 def _save(fig, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path.with_suffix(".png"), dpi=300, bbox_inches="tight")
-    fig.savefig(path.with_suffix(".pdf"), bbox_inches="tight")
+    legends = [*fig.legends]
+    legends.extend(legend for ax in fig.axes if (legend := ax.get_legend()) is not None)
+    save_options = {"bbox_inches": "tight", "pad_inches": 0.02, "bbox_extra_artists": legends}
+    fig.savefig(path.with_suffix(".png"), dpi=300, **save_options)
+    fig.savefig(path.with_suffix(".pdf"), **save_options)
     plt.close(fig)
 
 
@@ -156,10 +144,10 @@ def _format_p(value: float) -> str:
 
 
 def _regression(ax, x, y, color, label) -> None:
-    ax.scatter(x, y, color=color, alpha=0.75, s=60, edgecolor="white", linewidth=0.4)
+    ax.scatter(x, y, color=color, alpha=0.75, s=16, edgecolor="white", linewidth=0.4)
     slope, intercept = np.polyfit(x, y, 1)
     grid = np.linspace(min(x), max(x), 100)
-    ax.plot(grid, slope * grid + intercept, color=color, linewidth=2.3, label=label)
+    ax.plot(grid, slope * grid + intercept, color=color, linewidth=1.0, label=label)
 
 
 def _validation_panel(ax, all_results: pd.DataFrame, futrell_results: pd.DataFrame, target: str) -> None:
@@ -177,23 +165,23 @@ def _validation_panel(ax, all_results: pd.DataFrame, futrell_results: pd.DataFra
     ax.scatter(
         other["x"],
         other["y"],
-        s=58,
+        s=14,
         color=MID_GRAY,
         alpha=0.42,
         edgecolor="white",
         linewidth=0.35,
-        label=rf"Other UD languages ($n={len(other)}$)",
+        label=rf"Other UD ($n={len(other)}$)",
         zorder=1,
     )
     ax.scatter(
         selected["x"],
         selected["y"],
-        s=72,
+        s=18,
         color=RED,
         alpha=0.78,
         edgecolor="white",
         linewidth=0.45,
-        label=rf"Futrell languages ($n={len(selected)}$)",
+        label=rf"Futrell ($n={len(selected)}$)",
         zorder=2,
     )
     for subset, color, label in (
@@ -202,7 +190,7 @@ def _validation_panel(ax, all_results: pd.DataFrame, futrell_results: pd.DataFra
     ):
         slope, intercept = np.polyfit(subset["x"], subset["y"], 1)
         grid = np.linspace(subset["x"].min(), subset["x"].max(), 100)
-        linewidth = 3.4 if label.startswith("All UD") else 2.0
+        linewidth = 1.4 if label.startswith("All UD") else 2.0
         zorder = 3 if label.startswith("All UD") else 4
         ax.plot(
             grid,
@@ -241,11 +229,11 @@ def _validation_panel(ax, all_results: pd.DataFrame, futrell_results: pd.DataFra
 
 def plot_validation(all_results: pd.DataFrame, futrell_results: pd.DataFrame, output: Path) -> None:
     for target in ("HDE", "ROE"):
-        fig, ax = plt.subplots(figsize=(8, 6.8))
+        fig, ax = plt.subplots(figsize=figure_size(1, height_ratio=0.72))
         _validation_panel(ax, all_results, futrell_results, target)
         handles, labels = ax.get_legend_handles_labels()
         order = (0, 2, 1, 3)
-        ax.legend(
+        legend = ax.legend(
             [handles[index] for index in order],
             [labels[index] for index in order],
             loc="lower center",
@@ -254,17 +242,19 @@ def plot_validation(all_results: pd.DataFrame, futrell_results: pd.DataFrame, ou
             borderaxespad=0,
             frameon=True,
             framealpha=1.0,
-            fontsize=15,
+            fontsize=LEGEND_SIZE,
             columnspacing=0.9,
             labelspacing=0.45,
             handlelength=1.6,
             handletextpad=0.45,
             borderpad=0.45,
         )
-        fig.tight_layout(rect=(0, 0, 1, 0.84))
+        legend.set_in_layout(False)
+        fig.tight_layout()
+        fig.subplots_adjust(top=0.80)
         _save(fig, output / f"word_futrell_validation_decay_{target.lower()}")
 
-    fig, axes = plt.subplots(1, 2, figsize=(16, 6.8), sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=figure_size(2, height_ratio=0.43), sharey=True)
     for ax, target in zip(axes, ("HDE", "ROE"), strict=True):
         _validation_panel(ax, all_results, futrell_results, target)
     handles, labels = axes[0].get_legend_handles_labels()
@@ -292,7 +282,7 @@ def lambda_analysis(results: pd.DataFrame, output: Path) -> pd.DataFrame:
     table = pd.DataFrame(rows)
     table.to_csv(output / "soft_lambda_correlations.csv", index=False)
 
-    fig, ax = plt.subplots(figsize=(9, 6))
+    fig, ax = plt.subplots(figsize=figure_size(1, height_ratio=0.72))
     specs = (
         ("HDE", "none", RED, "o", "--", "white", "HDE"),
         ("HDE", "TTR", RED, "o", "-", None, r"$\mathrm{HDE} \mid \mathrm{TTR}$"),
@@ -307,24 +297,36 @@ def lambda_analysis(results: pd.DataFrame, output: Path) -> pd.DataFrame:
             color=color,
             marker=marker,
             linestyle=linestyle,
-            linewidth=2.2,
-            markersize=7,
+            linewidth=1.0,
+            markersize=3.5,
             markerfacecolor=color if fill is None else fill,
             markeredgecolor=color,
-            markeredgewidth=1.4,
+            markeredgewidth=0.7,
             label=label,
         )
     ax.axhline(0, color="black", linewidth=1, alpha=0.45)
     ax.margins(x=0.08, y=0.12)
     ax.set_xlabel(r"Distance decay $\lambda$", fontsize=AXIS_LABEL_SIZE)
     ax.set_ylabel(r"Pearson / partial $r$", fontsize=AXIS_LABEL_SIZE)
+    ax.set_xticks(DECAYS)
+    ax.set_xticklabels([rf"${format_decimal(decay)}$" for decay in DECAYS])
     ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
     ax.grid(True, alpha=0.3)
-    ax.legend(ncol=2, loc="lower left", fontsize=LEGEND_SIZE, framealpha=1.0)
+    legend = ax.legend(
+        *ax.get_legend_handles_labels(),
+        ncol=2,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.02),
+        fontsize=LEGEND_SIZE,
+        framealpha=1.0,
+        borderaxespad=0,
+    )
+    legend.set_in_layout(False)
     fig.tight_layout()
+    fig.subplots_adjust(top=0.80)
     _save(fig, output / "word_soft_lambda_profile")
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=figure_size(1, height_ratio=0.60))
     columns = [f"F_lambda_{int(decay * 100):03d}" for decay in DECAYS]
     for _, row in results.sort_values("Language").iterrows():
         ax.plot(DECAYS, row[columns], color=MID_GRAY, alpha=0.22, linewidth=0.9, zorder=1)
@@ -333,8 +335,8 @@ def lambda_analysis(results: pd.DataFrame, output: Path) -> pd.DataFrame:
         results[columns].median(),
         color=GREEN,
         marker="s",
-        linewidth=2.8,
-        markersize=7,
+        linewidth=1.2,
+        markersize=3.5,
         label="Median",
         zorder=3,
     )
@@ -345,20 +347,20 @@ def lambda_analysis(results: pd.DataFrame, output: Path) -> pd.DataFrame:
         marker="o",
         markerfacecolor="white",
         markeredgecolor=RED,
-        markeredgewidth=1.5,
-        linewidth=2.4,
-        markersize=7,
+        markeredgewidth=0.7,
+        linewidth=1.0,
+        markersize=3.5,
         label="Mean",
         zorder=3,
     )
     ax.set_xlabel(r"Distance decay $\lambda$", fontsize=AXIS_LABEL_SIZE)
     ax.set_ylabel(r"Flexibility $F^{(\lambda)}$", fontsize=AXIS_LABEL_SIZE)
     ax.set_xticks(DECAYS)
-    ax.set_xticklabels([r"$0.25$", r"$0.5$", r"$0.75$", r"$1.0$"])
+    ax.set_xticklabels([rf"${format_decimal(decay)}$" for decay in DECAYS])
     ax.set_ylim(0, 1)
     ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
     ax.grid(True, alpha=0.3)
-    ax.legend(loc="lower left", fontsize=LEGEND_SIZE, framealpha=1.0)
+    ax.legend(loc="upper left", fontsize=LEGEND_SIZE, framealpha=1.0)
     fig.tight_layout()
     _save(fig, output / "word_language_soft_lambda_profiles")
     return table
@@ -392,7 +394,7 @@ def bakker_figures(results: pd.DataFrame, bakker: pd.DataFrame, output: Path) ->
         "Bakker": "Bakker",
         "HDE": "HDE",
         "ROE": "ROE",
-        **{rf"$F^{{({decay:g})}}$": f"F_lambda_{int(decay * 100):03d}" for decay in DECAYS},
+        **{rf"$F^{{({format_decimal(decay)})}}$": f"F_lambda_{int(decay * 100):03d}" for decay in DECAYS},
     }
     labels = list(metrics)
     matrix = merged[list(metrics.values())].corr(method="pearson")
@@ -415,7 +417,10 @@ def bakker_figures(results: pd.DataFrame, bakker: pd.DataFrame, output: Path) ->
         row["q_bh"] = value
     pd.DataFrame(tests).to_csv(output / "bakker_metric_correlations.csv", index=False)
 
-    fig, ax = plt.subplots(figsize=(9, 8))
+    fig = plt.figure(figsize=figure_size(1, height_ratio=1.08))
+    grid = fig.add_gridspec(2, 1, height_ratios=(18, 1), hspace=0.48)
+    ax = fig.add_subplot(grid[0])
+    colorbar_axis = fig.add_subplot(grid[1])
     mask = np.triu(np.ones_like(matrix, dtype=bool), 1)
     sns.heatmap(
         matrix,
@@ -425,16 +430,11 @@ def bakker_figures(results: pd.DataFrame, bakker: pd.DataFrame, output: Path) ->
         vmax=1,
         center=0,
         cmap=sns.diverging_palette(10, 130, s=65, l=55, as_cmap=True),
-        linewidths=0.7,
+        linewidths=0.35,
         linecolor="white",
         square=True,
-        cbar_kws={
-            "label": r"Pearson $r$",
-            "orientation": "horizontal",
-            "location": "bottom",
-            "shrink": 0.72,
-            "pad": 0.08,
-        },
+        cbar_ax=colorbar_axis,
+        cbar_kws={"orientation": "horizontal"},
         ax=ax,
     )
     q_values = {(row["left"], row["right"]): row["q_bh"] for row in tests}
@@ -442,49 +442,65 @@ def bakker_figures(results: pd.DataFrame, bakker: pd.DataFrame, output: Path) ->
         for column_index, right in enumerate(labels):
             if column_index > row_index:
                 continue
+            if column_index == row_index:
+                ax.add_patch(
+                    plt.Rectangle((column_index, row_index), 1, 1, facecolor=LIGHT_GRAY, edgecolor="white", linewidth=0.35)
+                )
+                ax.text(
+                    column_index + 0.5,
+                    row_index + 0.5,
+                    r"\textemdash",
+                    ha="center",
+                    va="center",
+                    fontsize=ANNOTATION_SIZE,
+                    color=SLATE,
+                )
+                continue
             value = matrix.loc[left, right]
-            ax.text(
-                column_index + 0.5,
-                row_index + 0.53,
-                "--" if pd.isna(value) else f"{value:.2f}",
-                ha="center",
-                va="center",
-                fontsize=18,
-                fontweight="bold",
-                color="#1A1A1A",
-            )
             q_value = q_values.get((left, right), q_values.get((right, left), float("nan")))
             star = "" if pd.isna(q_value) else _stars(q_value)
+            annotation = r"--" if pd.isna(value) else rf"$\mathbf{{{value:.2f}}}$"
+            ax.text(
+                column_index + 0.5,
+                row_index + 0.57,
+                annotation,
+                ha="center",
+                va="center",
+                fontsize=7,
+                color="#1A1A1A",
+            )
             if star:
                 ax.text(
-                    column_index + 0.78,
-                    row_index + 0.23,
+                    column_index + 0.5,
+                    row_index + 0.24,
                     star,
-                    ha="right",
-                    va="top",
-                    fontsize=8.5,
-                    fontweight="bold",
+                    ha="center",
+                    va="center",
+                    fontsize=4.5,
                     color="#1A1A1A",
                 )
     ax.set_xlabel("")
     ax.set_ylabel("")
-    ax.tick_params(axis="both", labelsize=18)
+    ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE, bottom=True, left=True, length=1.5, width=0.5)
     ax.grid(False)
     colorbar = ax.collections[0].colorbar
-    colorbar.ax.tick_params(labelsize=15)
-    colorbar.set_label(r"Pearson $r$", fontsize=18, fontweight="normal")
-    fig.tight_layout()
+    colorbar.ax.tick_params(labelsize=TICK_LABEL_SIZE, length=2.5, width=0.5)
+    colorbar.set_label(r"Pearson $r$", fontsize=ANNOTATION_SIZE, fontweight="normal")
+    plt.setp(ax.get_xticklabels(), rotation=90, ha="center")
+    plt.setp(ax.get_yticklabels(), rotation=0, va="center")
+    fig.canvas.draw()
+    fig.subplots_adjust(left=0.24, right=0.95, top=0.98, bottom=0.10)
     _save(fig, output / "bakker_metric_correlations")
 
     pearson = stats.pearsonr(merged["Bakker"], merged[FLEX])
     spearman = stats.spearmanr(merged["Bakker"], merged[FLEX])
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=figure_size(1, height_ratio=0.75))
     sns.regplot(
         data=merged,
         x="Bakker",
         y=FLEX,
         scatter_kws={
-            "s": 60,
+            "s": 16,
             "alpha": 0.75,
             "facecolor": GREEN,
             "edgecolor": "white",
@@ -515,6 +531,7 @@ def bakker_figures(results: pd.DataFrame, bakker: pd.DataFrame, output: Path) ->
 
 def _format_sentence_axis(ax) -> None:
     ax.set_xscale("log")
+    ax.minorticks_off()
     ax.set_xticks(SIZES)
     ax.set_xticklabels([f"{size:,}" for size in SIZES])
     ax.set_xlabel("Number of sentences", fontsize=AXIS_LABEL_SIZE)
@@ -539,7 +556,7 @@ def sentence_size_figures(results: pd.DataFrame, output: Path) -> None:
     table = pd.DataFrame(rows)
     table.to_csv(output / "sentence_size_correlations.csv", index=False)
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=figure_size(1, height_ratio=0.66))
     specs = (
         ("HDE", "none", RED, "o", "--", "white", "HDE"),
         ("HDE", "TTR", RED, "o", "-", None, r"$\mathrm{HDE} \mid \mathrm{TTR}$"),
@@ -555,11 +572,11 @@ def sentence_size_figures(results: pd.DataFrame, output: Path) -> None:
             color=color,
             marker=marker,
             linestyle=linestyle,
-            linewidth=2.4,
-            markersize=7,
+            linewidth=1.0,
+            markersize=3.5,
             markerfacecolor=color if fill is None else fill,
             markeredgecolor=color,
-            markeredgewidth=1.5,
+            markeredgewidth=0.7,
             label=label,
         )
     ax.axhline(0, color="black", linewidth=1, alpha=0.5)
@@ -567,8 +584,18 @@ def sentence_size_figures(results: pd.DataFrame, output: Path) -> None:
     ax.set_ylabel(r"Pearson / partial $r$", fontsize=AXIS_LABEL_SIZE)
     ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
     ax.grid(True, alpha=0.3)
-    ax.legend(ncol=2, fontsize=LEGEND_SIZE, framealpha=1.0)
+    legend = ax.legend(
+        *ax.get_legend_handles_labels(),
+        ncol=2,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.02),
+        fontsize=LEGEND_SIZE,
+        framealpha=1.0,
+        borderaxespad=0,
+    )
+    legend.set_in_layout(False)
     fig.tight_layout()
+    fig.subplots_adjust(top=0.79)
     _save(fig, output / "common_language_correlations_by_sentence_size")
 
     largest = results[results.n_sentences == max(SIZES)][["Language", FLEX]]
@@ -586,14 +613,14 @@ def sentence_size_figures(results: pd.DataFrame, output: Path) -> None:
     stability = pd.DataFrame(stability)
     stability.to_csv(output / "size_stability.csv", index=False)
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=figure_size(1, height_ratio=0.60))
     ax.plot(
         stability.n_sentences,
         stability.pearson_r,
         color=RED,
         marker="o",
-        linewidth=2.4,
-        markersize=7,
+        linewidth=1.0,
+        markersize=3.5,
         label=r"Pearson $r$",
     )
     ax.plot(
@@ -601,13 +628,13 @@ def sentence_size_figures(results: pd.DataFrame, output: Path) -> None:
         stability.spearman_rho,
         color=GREEN,
         marker="s",
-        linewidth=2.4,
-        markersize=7,
+        linewidth=1.0,
+        markersize=3.5,
         label=r"Spearman $\rho$",
     )
     _format_sentence_axis(ax)
     ax.set_ylim(-0.05, 1.05)
-    ax.set_ylabel("Correlation with largest sample", fontsize=AXIS_LABEL_SIZE)
+    ax.set_ylabel("Correlation with\n10,000 sentences", fontsize=AXIS_LABEL_SIZE)
     ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=LEGEND_SIZE, framealpha=1.0)
@@ -616,7 +643,7 @@ def sentence_size_figures(results: pd.DataFrame, output: Path) -> None:
 
     profile = table[table["lambda"].notna()]
     alphas = np.linspace(0.38, 1.0, len(SIZES))
-    fig, ax = plt.subplots(figsize=(10.5, 6.2))
+    fig, ax = plt.subplots(figsize=figure_size(1, height_ratio=0.70))
     for size, alpha in zip(SIZES, alphas, strict=True):
         for target, color, marker, linestyle, fill in (
             ("HDE", RED, "o", "-", None),
@@ -630,19 +657,19 @@ def sentence_size_figures(results: pd.DataFrame, output: Path) -> None:
                 alpha=float(alpha),
                 linestyle=linestyle,
                 marker=marker,
-                linewidth=2.45,
-                markersize=7,
+                linewidth=1.05,
+                markersize=3.5,
                 markerfacecolor=color if fill is None else fill,
                 markeredgecolor=color,
-                markeredgewidth=1.5,
+                markeredgewidth=0.7,
                 label="_nolegend_",
             )
     ax.axhline(0, color="black", linewidth=1, alpha=0.5)
     ax.set_xticks(DECAYS)
-    ax.set_xticklabels([r"$0.25$", r"$0.5$", r"$0.75$", r"$1.0$"])
-    ax.set_xlabel(r"Distance decay $\lambda$", fontsize=26)
-    ax.set_ylabel(r"Partial $r$", fontsize=26)
-    ax.tick_params(axis="both", labelsize=18)
+    ax.set_xticklabels([rf"${format_decimal(decay)}$" for decay in DECAYS])
+    ax.set_xlabel(r"Distance decay $\lambda$", fontsize=AXIS_LABEL_SIZE)
+    ax.set_ylabel(r"Partial $r$", fontsize=AXIS_LABEL_SIZE)
+    ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
     ax.grid(True, alpha=0.3)
     target_handles = [
         plt.Line2D(
@@ -651,8 +678,8 @@ def sentence_size_figures(results: pd.DataFrame, output: Path) -> None:
             color=RED,
             marker="o",
             linestyle="-",
-            linewidth=2.45,
-            markersize=7,
+            linewidth=1.05,
+            markersize=3.5,
             label=r"$\mathrm{HDE} \mid \mathrm{TTR}$",
         ),
         plt.Line2D(
@@ -661,22 +688,24 @@ def sentence_size_figures(results: pd.DataFrame, output: Path) -> None:
             color=GREEN,
             marker="D",
             linestyle="--",
-            linewidth=2.45,
-            markersize=7,
+            linewidth=1.05,
+            markersize=3.5,
             markerfacecolor="white",
             label=r"$\mathrm{ROE} \mid \mathrm{TTR}$",
         ),
     ]
     size_handles = [
-        plt.Line2D([0], [0], color=SLATE, alpha=float(alpha), linewidth=3, label=f"{size:,}")
+        plt.Line2D([0], [0], color=SLATE, alpha=float(alpha), linewidth=1.3, label=f"{size:,}")
         for size, alpha in zip(SIZES, alphas, strict=True)
     ]
     blanks = [plt.Line2D([], [], linestyle="", label="") for _ in range(2)]
-    ax.legend(
+    legend = ax.legend(
         handles=[*target_handles, *blanks, *size_handles],
         fontsize=LEGEND_SIZE,
-        loc="lower left",
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.02),
         ncol=4,
+        borderaxespad=0,
         frameon=True,
         framealpha=1.0,
         columnspacing=0.45,
@@ -684,12 +713,14 @@ def sentence_size_figures(results: pd.DataFrame, output: Path) -> None:
         handletextpad=0.35,
         borderpad=0.35,
     )
+    legend.set_in_layout(False)
     fig.tight_layout()
+    fig.subplots_adjust(top=0.78)
     _save(fig, output / "decay_profile_by_sentence_size")
 
 
 def plot_language_trajectories(results: pd.DataFrame, output: Path) -> None:
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=figure_size(1, height_ratio=0.67))
     for _, group in results.groupby("Language"):
         line = group.sort_values("n_sentences")
         ax.plot(
@@ -706,8 +737,8 @@ def plot_language_trajectories(results: pd.DataFrame, output: Path) -> None:
         summary["median"],
         color=GREEN,
         marker="s",
-        linewidth=2.6,
-        markersize=7,
+        linewidth=1.1,
+        markersize=3.5,
         label="Median",
         zorder=3,
     )
@@ -716,11 +747,11 @@ def plot_language_trajectories(results: pd.DataFrame, output: Path) -> None:
         summary["mean"],
         color=RED,
         marker="o",
-        linewidth=2.2,
-        markersize=7,
+        linewidth=1.0,
+        markersize=3.5,
         markerfacecolor="white",
         markeredgecolor=RED,
-        markeredgewidth=1.5,
+        markeredgewidth=0.7,
         label="Mean",
         zorder=3,
     )
@@ -728,8 +759,18 @@ def plot_language_trajectories(results: pd.DataFrame, output: Path) -> None:
     ax.set_ylabel(r"Flexibility $F^{(.5)}$", fontsize=AXIS_LABEL_SIZE)
     ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
     ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=LEGEND_SIZE, framealpha=1.0)
+    legend = ax.legend(
+        *ax.get_legend_handles_labels(),
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.02),
+        ncol=2,
+        fontsize=LEGEND_SIZE,
+        framealpha=1.0,
+        borderaxespad=0,
+    )
+    legend.set_in_layout(False)
     fig.tight_layout()
+    fig.subplots_adjust(top=0.86)
     _save(fig, output / "language_trajectories_by_sentence_size")
 
 
@@ -963,7 +1004,7 @@ def validation_plot(rows: list[dict], output: str | Path, *, control_ttr: bool =
     """Plot flexibility against HDE and ROE for the public CSV interface."""
     _set_style()
     frame = pd.DataFrame(rows)
-    fig, axes = plt.subplots(1, 2, figsize=(8, 3.6), constrained_layout=True)
+    fig, axes = plt.subplots(1, 2, figsize=figure_size(2, height_ratio=0.45), constrained_layout=True)
     for ax, target, color in zip(axes, ("HDE", "ROE"), (RED, GREEN), strict=True):
         data = frame[["flexibility", target, "ttr"]].astype(float).dropna()
         x, y = data[target].to_numpy(), data["flexibility"].to_numpy()
@@ -974,7 +1015,7 @@ def validation_plot(rows: list[dict], output: str | Path, *, control_ttr: bool =
         suffix = " residual" if control_ttr else ""
         ax.set_xlabel(target + suffix)
         ax.set_ylabel("$F(.5)$" + suffix)
-    fig.savefig(output, dpi=300, bbox_inches="tight")
+    fig.savefig(output, dpi=300)
     plt.close(fig)
 
 
@@ -983,7 +1024,7 @@ def profile_plot(rows: list[dict], output: str | Path) -> None:
     _set_style()
     frame = pd.DataFrame(rows)
     frame[["lambda", "flexibility"]] = frame[["lambda", "flexibility"]].astype(float)
-    fig, ax = plt.subplots(figsize=(5.2, 3.6), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=figure_size(1, height_ratio=0.69), constrained_layout=True)
     for _, group in frame.groupby("language"):
         line = group.sort_values("lambda")
         ax.plot(
@@ -1002,8 +1043,11 @@ def profile_plot(rows: list[dict], output: str | Path) -> None:
         linewidth=2,
         label="Mean",
     )
+    decays = sorted(frame["lambda"].unique())
+    ax.set_xticks(decays)
+    ax.set_xticklabels([rf"${format_decimal(decay)}$" for decay in decays])
     ax.set_xlabel("Distance decay $\\lambda$")
     ax.set_ylabel("Flexibility $F(\\lambda)$")
     ax.legend(framealpha=1)
-    fig.savefig(output, dpi=300, bbox_inches="tight")
+    fig.savefig(output, dpi=300)
     plt.close(fig)
