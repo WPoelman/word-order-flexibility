@@ -174,6 +174,7 @@ def corpus_branch(
     n_sentences,
     sample_count,
     sample_sentences,
+    min_sentence_words,
     output_root,
     metric_resources,
     small_resources,
@@ -205,6 +206,7 @@ def corpus_branch(
                     sample_output_path=str(sample_output),
                     sample_seeds=tuple(range(sample_count)),
                     sample_sentences=sample_sentences,
+                    min_sentence_words=min_sentence_words,
                 ),
             )
         )
@@ -312,11 +314,11 @@ def build_plan(args) -> Plan:
     corpus_outputs = []
     corpus_sample_outputs = []
     corpus_settings = (
-        ("flores", args.flores_dir, "lines"),
-        ("bible", args.bible_dir, "tokenized"),
-        ("wikipedia", args.wikipedia_dir, "text"),
+        ("flores", args.flores_dir, "lines", 1),
+        ("bible", args.bible_dir, "tokenized", 1),
+        ("wikipedia", args.wikipedia_dir, "text", args.wikipedia_min_words),
     )
-    for name, input_dir, input_format in corpus_settings:
+    for name, input_dir, input_format, min_sentence_words in corpus_settings:
         if input_dir is None:
             continue
         branch, combined, combined_samples = corpus_branch(
@@ -326,6 +328,7 @@ def build_plan(args) -> Plan:
             args.corpus_sentences,
             args.corpus_samples,
             args.corpus_sample_sentences,
+            min_sentence_words,
             args.output_dir,
             metric_resources,
             small_resources,
@@ -373,6 +376,12 @@ def main() -> None:
     parser.add_argument("--bible-dir", type=Path)
     parser.add_argument("--wikipedia-dir", type=Path)
     parser.add_argument(
+        "--wikipedia-min-words",
+        type=int,
+        default=5,
+        help="Minimum tokenized words per Wikipedia sentence",
+    )
+    parser.add_argument(
         "--corpus-sentences",
         type=int,
         default=1000,
@@ -404,6 +413,8 @@ def main() -> None:
     parser.add_argument("--submit", action="store_true")
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
+    if args.wikipedia_min_words < 1:
+        parser.error("--wikipedia-min-words must be at least 1")
     if min(args.corpus_sentences, args.corpus_sample_sentences) < 1000:
         parser.error("external corpus analyses require at least 1000 sentences per sample")
     if args.corpus_samples < 2:

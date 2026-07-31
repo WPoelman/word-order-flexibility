@@ -31,9 +31,13 @@ def calculate_corpus_file(
     sample_output_path: str | Path | None = None,
     sample_seeds: tuple[int, ...] = (),
     sample_sentences: int = 1000,
+    min_sentence_words: int = 1,
 ) -> None:
     """Calculate result and seeded runs after one segmentation pass."""
+    if min_sentence_words < 1:
+        raise ValueError("min_sentence_words must be at least 1")
     sentences = read_sentences(input_path, input_format=input_format, apply_splitter=splitter)
+    sentences = [sentence for sentence in sentences if len(sentence) >= min_sentence_words]
     required = max(n_sentences, sample_sentences if sample_seeds else 0)
     if len(sentences) < required:
         raise ValueError(f"{code}: found {len(sentences)} sentences; need {required}")
@@ -41,7 +45,15 @@ def calculate_corpus_file(
     result = word_order_flexibility(sentences[:n_sentences], decay=decay)
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps({"code": code, **result}, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    output.write_text(
+        json.dumps(
+            {"code": code, "min_sentence_words": min_sentence_words, "available_sentences": len(sentences), **result},
+            indent=2,
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     if sample_output_path is not None:
         sample_rows = []
@@ -51,6 +63,8 @@ def calculate_corpus_file(
                 {
                     "code": code,
                     "seed": seed,
+                    "min_sentence_words": min_sentence_words,
+                    "available_sentences": len(sentences),
                     **word_order_flexibility(sample, decay=decay),
                 }
             )
