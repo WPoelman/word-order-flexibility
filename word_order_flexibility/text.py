@@ -33,9 +33,17 @@ def _remove_punct(sent: str) -> str:
 
 @lru_cache(maxsize=1)
 def _sentence_segmenter():
+    import onnxruntime as ort
     from wtpsplit import SaT
 
-    return SaT("sat-3l-sm", ort_providers=["CPUExecutionProvider"])
+    session_options = ort.SessionOptions()
+    session_options.intra_op_num_threads = 1
+    session_options.inter_op_num_threads = 1
+    return SaT(
+        "sat-3l-sm",
+        ort_providers=["CPUExecutionProvider"],
+        ort_kwargs={"sess_options": session_options},
+    )
 
 
 def segment_text(text: str) -> list[str]:
