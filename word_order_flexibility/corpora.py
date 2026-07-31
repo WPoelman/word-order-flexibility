@@ -109,6 +109,22 @@ def combine_corpus_results(inputs: list[str], output_path: str | Path) -> None:
         writer.writerows(rows)
 
 
+def merge_csv_files(inputs: list[str], output_path: str | Path) -> None:
+    rows = []
+    columns = []
+    for path in inputs:
+        with Path(path).open(encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            columns.extend(column for column in (reader.fieldnames or []) if column not in columns)
+            rows.extend(reader)
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 def combine_corpus_samples(inputs: list[str], output_path: str | Path) -> None:
     rows = [row for path in inputs for row in json.loads(Path(path).read_text(encoding="utf-8"))]
     output = Path(output_path)

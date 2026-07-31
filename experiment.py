@@ -14,6 +14,7 @@ from word_order_flexibility.corpora import (
     calculate_corpus_file,
     combine_corpus_results,
     combine_corpus_samples,
+    merge_csv_files,
 )
 from word_order_flexibility.flexibility import flexibility_profile
 from word_order_flexibility.languages import FUTRELL_LANGUAGES, LANGUAGES
@@ -25,6 +26,7 @@ from word_order_flexibility.ud import (
 
 DECAYS = (0.25, 0.5, 0.75, 1.0)
 SENTENCE_SIZES = (1000, 2000, 5000, 10000)
+DEPENDENCY_BATCH_SIZE = 50
 
 
 def lambda_label(value: float) -> str:
@@ -161,6 +163,16 @@ def script_splitter(code: str) -> str:
     return "default"
 
 
+def valid_json(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return True
+
+
 def corpus_branch(
     name,
     input_dir,
@@ -176,53 +188,74 @@ def corpus_branch(
     files = sorted(Path(input_dir).glob("*.txt"))
     if name == "bible":
         files = [path for path in files if not path.stem.endswith("-sampled")]
-    outputs = []
-    sample_outputs = []
-    steps = []
-    for path in files:
-        code = path.stem
-        output = output_root / name / "languages" / f"{code}.json"
-        sample_output = output_root / name / "samples" / f"{code}.json"
-        outputs.append(str(output))
-        sample_outputs.append(str(sample_output))
-        steps.append(
-            Step(
-                f"{name}-{code}",
-                metric_resources,
-                partial(
-                    calculate_corpus_file,
-                    code,
-                    str(path),
-                    str(output),
-                    input_format=input_format,
-                    splitter=script_splitter(code),
-                    n_sentences=n_sentences,
-                    sample_output_path=str(sample_output),
-                    sample_seeds=tuple(range(sample_count)),
-                    sample_sentences=sample_sentences,
-                    min_sentence_words=min_sentence_words,
-                ),
-            )
-        )
-    if not steps:
+    if not files:
         raise ValueError(f"No .txt files found in {input_dir}")
+
+    batch_branches = []
+    batch_results = []
+    batch_samples = []
+    for batch_index, start in enumerate(range(0, len(files), DEPENDENCY_BATCH_SIZE)):
+        batch = files[start : start + DEPENDENCY_BATCH_SIZE]
+        outputs = []
+        sample_outputs = []
+        language_steps = []
+        for path in batch:
+            code = path.stem
+            output = output_root / name / "languages" / f"{code}.json"
+            sample_output = output_root / name / "samples" / f"{code}.json"
+            outputs.append(str(output))
+            sample_outputs.append(str(sample_output))
+            if valid_json(output) and valid_json(sample_output):
+                continue
+            language_steps.append(
+                Step(
+                    f"{name}-{code}",
+                    metric_resources,
+                    partial(
+                        calculate_corpus_file,
+                        code,
+                        str(path),
+                        str(output),
+                        input_format=input_format,
+                        splitter=script_splitter(code),
+                        n_sentences=n_sentences,
+                        sample_output_path=str(sample_output),
+                        sample_seeds=tuple(range(sample_count)),
+                        sample_sentences=sample_sentences,
+                        min_sentence_words=min_sentence_words,
+                    ),
+                )
+            )
+
+        batch_result = output_root / name / "_batches" / f"{batch_index:03d}-results.csv"
+        batch_sample = output_root / name / "_batches" / f"{batch_index:03d}-samples.csv"
+        batch_results.append(str(batch_result))
+        batch_samples.append(str(batch_sample))
+        collectors = Parallel(
+            Step(
+                f"combine-{name}-{batch_index:03d}",
+                small_resources,
+                partial(combine_corpus_results, outputs, str(batch_result)),
+            ),
+            Step(
+                f"combine-{name}-{batch_index:03d}-samples",
+                small_resources,
+                partial(combine_corpus_samples, sample_outputs, str(batch_sample)),
+            ),
+        )
+        batch_branches.append(Chain(Parallel(*language_steps), collectors) if language_steps else collectors)
+
     combined = output_root / name / "results.csv"
     combined_samples = output_root / name / "samples.csv"
-    return (
-        Chain(
-            Parallel(*steps),
-            Parallel(
-                Step(f"combine-{name}", small_resources, partial(combine_corpus_results, outputs, str(combined))),
-                Step(
-                    f"combine-{name}-samples",
-                    small_resources,
-                    partial(combine_corpus_samples, sample_outputs, str(combined_samples)),
-                ),
-            ),
+    final_collectors = Parallel(
+        Step(f"combine-{name}", small_resources, partial(merge_csv_files, batch_results, str(combined))),
+        Step(
+            f"combine-{name}-samples",
+            small_resources,
+            partial(merge_csv_files, batch_samples, str(combined_samples)),
         ),
-        combined,
-        combined_samples,
     )
+    return Chain(Parallel(*batch_branches), final_collectors), combined, combined_samples
 
 
 def build_plan(args) -> Plan:

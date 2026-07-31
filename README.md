@@ -146,7 +146,9 @@ sentences are excluded without failing the experiment and listed in
 `<corpus>_exclusions.csv`. Each language is segmented once; the same in-memory sentences are used for the
 deterministic prefix and ten seeded random samples without replacement. FLORES
 inputs combine its `dev` and `devtest` splits. The cluster jobs stop after writing
-`results.csv` and `samples.csv` for each corpus.
+`results.csv` and `samples.csv` for each corpus. Collector dependencies are reduced
+in batches of 50. Resubmission reuses valid per-language JSON outputs and schedules
+only missing language calculations.
 
 After copying the completed `results` directory to a machine with TeX, generate
 the corpus analyses and the paper artifacts locally:
