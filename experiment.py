@@ -4,8 +4,6 @@ import argparse
 import csv
 import json
 import logging
-import shutil
-import tempfile
 from functools import partial
 from pathlib import Path
 
@@ -13,16 +11,12 @@ import submitit
 from planit import Chain, MailType, Parallel, Plan, SlurmArgs, Step
 
 from word_order_flexibility.corpora import (
-    analyze_corpora,
-    analyze_corpus_stability,
     calculate_corpus_file,
     combine_corpus_results,
     combine_corpus_samples,
 )
 from word_order_flexibility.flexibility import flexibility_profile
 from word_order_flexibility.languages import FUTRELL_LANGUAGES, LANGUAGES
-from word_order_flexibility.plot_utils import apply_paper_style
-from word_order_flexibility.plotting import generate_paper_artifacts
 from word_order_flexibility.ud import (
     calculate_ud_metrics,
     load_conllu,
@@ -231,34 +225,6 @@ def corpus_branch(
     )
 
 
-def check_latex_rendering() -> None:
-    """Fail before submission unless the paper plots can use LaTeX."""
-    if shutil.which("latex") is None:
-        raise RuntimeError(
-            "LaTeX is not available on PATH. Load a TeX module before submitting "
-            "(check with `command -v latex`), or generate plots later on a machine with TeX."
-        )
-
-    import matplotlib.pyplot as plt
-
-    apply_paper_style()
-    figure, axis = plt.subplots(figsize=(1.5, 1.0))
-    axis.set_xlabel(r"Distance decay $\lambda$")
-    axis.plot([0, 1], [0, 1], label=r"$F^{(.5)}$")
-    axis.legend()
-    try:
-        with tempfile.TemporaryDirectory(prefix="word-flexibility-latex-check-") as directory:
-            figure.savefig(Path(directory) / "latex-check.png", dpi=72)
-            figure.savefig(Path(directory) / "latex-check.pdf")
-    except Exception as error:
-        raise RuntimeError(
-            "LaTeX was found, but Matplotlib could not render the paper plots. "
-            "Check the loaded TeX module and required packages (including newtxtext)."
-        ) from error
-    finally:
-        plt.close(figure)
-
-
 def build_plan(args) -> Plan:
     common = {
         "time": args.time,
@@ -274,20 +240,18 @@ def build_plan(args) -> Plan:
     metric_resources = SlurmArgs(**common)
     small_resources = SlurmArgs(**{**common, "cpus_per_task": 1})
 
-    all_results = args.output_dir / "all-1000" / "results.csv"
     parallel_branches = []
-    final_steps = []
     if not args.corpora_only:
         broad = available_languages(args.ud_path, list(LANGUAGES.items()), 1000)
         futrell = available_languages(args.ud_path, FUTRELL_LANGUAGES, 1000)
         common_sizes = available_languages(args.ud_path, list(LANGUAGES.items()), max(SENTENCE_SIZES))
-        all_branch, all_results = experiment_branch(
+        all_branch, _all_results = experiment_branch(
             "all-1000", broad, (1000,), args.ud_path, args.output_dir, metric_resources, small_resources
         )
-        futrell_branch, futrell_results = experiment_branch(
+        futrell_branch, _futrell_results = experiment_branch(
             "futrell-1000", futrell, (1000,), args.ud_path, args.output_dir, metric_resources, small_resources
         )
-        size_branch, size_results = experiment_branch(
+        size_branch, _size_results = experiment_branch(
             "sentence-sizes",
             common_sizes,
             SENTENCE_SIZES,
@@ -297,22 +261,6 @@ def build_plan(args) -> Plan:
             small_resources,
         )
         parallel_branches.extend((all_branch, futrell_branch, size_branch))
-        final_steps.append(
-            Step(
-                "paper-artifacts",
-                small_resources,
-                partial(
-                    generate_paper_artifacts,
-                    str(all_results),
-                    str(futrell_results),
-                    str(size_results),
-                    str(args.bakker),
-                    str(args.output_dir / "paper"),
-                ),
-            )
-        )
-    corpus_outputs = []
-    corpus_sample_outputs = []
     corpus_settings = (
         ("flores", args.flores_dir, "lines", 1),
         ("bible", args.bible_dir, "tokenized", 1),
@@ -321,7 +269,7 @@ def build_plan(args) -> Plan:
     for name, input_dir, input_format, min_sentence_words in corpus_settings:
         if input_dir is None:
             continue
-        branch, combined, combined_samples = corpus_branch(
+        branch, _combined, _combined_samples = corpus_branch(
             name,
             input_dir,
             input_format,
@@ -334,43 +282,15 @@ def build_plan(args) -> Plan:
             small_resources,
         )
         parallel_branches.append(branch)
-        corpus_outputs.append((name, str(combined)))
-        corpus_sample_outputs.append((name, str(combined_samples)))
-    if corpus_outputs:
-        final_steps.extend(
-            (
-                Step(
-                    "corpus-analysis",
-                    small_resources,
-                    partial(
-                        analyze_corpora,
-                        corpus_outputs,
-                        str(all_results),
-                        str(args.output_dir / "corpus-analysis"),
-                    ),
-                ),
-                Step(
-                    "corpus-stability-analysis",
-                    small_resources,
-                    partial(
-                        analyze_corpus_stability,
-                        corpus_sample_outputs,
-                        str(all_results),
-                        str(args.output_dir / "corpus-analysis"),
-                    ),
-                ),
-            )
-        )
     if not parallel_branches:
         raise ValueError("No experiment branches selected")
-    return Plan("word-order-flexibility-paper", Chain(Parallel(*parallel_branches), Parallel(*final_steps)))
+    return Plan("word-order-flexibility", Parallel(*parallel_branches))
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ud-path", type=Path, default=Path("ud/ud-treebanks-v2.17"))
-    parser.add_argument("--bakker", type=Path, default=Path("data/bakker-flexibility-metrics.csv"))
     parser.add_argument("--output-dir", type=Path, default=Path("results"))
     parser.add_argument("--flores-dir", type=Path)
     parser.add_argument("--bible-dir", type=Path)
@@ -408,7 +328,7 @@ def main() -> None:
     parser.add_argument(
         "--corpora-only",
         action="store_true",
-        help="Run only external-corpus jobs and reuse OUTPUT_DIR/all-1000/results.csv",
+        help="Run only external-corpus calculation and combination jobs",
     )
     parser.add_argument("--submit", action="store_true")
     parser.add_argument("--debug", action="store_true")
@@ -425,19 +345,12 @@ def main() -> None:
         parser.error("--corpora-only requires at least one external corpus directory")
     if not args.corpora_only and not args.ud_path.is_dir():
         raise FileNotFoundError(f"UD directory not found: {args.ud_path}; run download_ud.py first")
-    existing_ud_results = args.output_dir / "all-1000" / "results.csv"
-    if args.corpora_only and not existing_ud_results.is_file():
-        raise FileNotFoundError(f"Existing UD results not found: {existing_ud_results}")
-    if not args.corpora_only and not args.bakker.is_file():
-        raise FileNotFoundError(f"Bakker ratings file not found: {args.bakker}")
     for corpus_dir in corpus_dirs:
         if corpus_dir is not None and not corpus_dir.is_dir():
             raise FileNotFoundError(f"Corpus directory not found: {corpus_dir}")
     plan = build_plan(args)
     plan.describe()
     if args.submit or args.debug:
-        check_latex_rendering()
-        print("LaTeX plotting check passed.")
         executor = submitit.AutoExecutor(
             folder=str(args.output_dir / "slurm_logs"),
             cluster="debug" if args.debug else None,

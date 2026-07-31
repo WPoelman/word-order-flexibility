@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from .analysis import correlations
+from .corpora import analyze_corpora, analyze_corpus_stability
 from .flexibility import flexibility_profile, word_order_flexibility
 from .plotting import generate_paper_artifacts, profile_plot, validation_plot
 from .text import read_sentences
@@ -44,8 +45,9 @@ def _metric_results(sentences, args):
 
 
 def text_command(args) -> None:
-    sentences = read_sentences(args.input, input_format=args.format, lowercase=not args.keep_case, 
-                               apply_splitter=args.apply_splitter)
+    sentences = read_sentences(
+        args.input, input_format=args.format, lowercase=not args.keep_case, apply_splitter=args.apply_splitter
+    )
     _write_json(_metric_results(sentences, args), args.output)
 
 
@@ -79,6 +81,28 @@ def analyze_command(args) -> None:
         profile_plot(rows, output_dir / "decay_profile.png")
 
 
+def corpus_analysis_command(args) -> None:
+    root = Path(args.results_dir)
+    output = Path(args.output_dir) if args.output_dir else root / "corpus-analysis"
+    corpus_results = []
+    corpus_samples = []
+    for name in ("flores", "bible", "wikipedia"):
+        results = root / name / "results.csv"
+        samples = root / name / "samples.csv"
+        if results.is_file():
+            corpus_results.append((name, str(results)))
+        if samples.is_file():
+            corpus_samples.append((name, str(samples)))
+    if not corpus_results:
+        raise FileNotFoundError(f"No combined corpus results found under {root}")
+    ud_results = root / "all-1000" / "results.csv"
+    if not ud_results.is_file():
+        raise FileNotFoundError(f"UD validation results not found: {ud_results}")
+    analyze_corpora(corpus_results, ud_results, output)
+    if corpus_samples:
+        analyze_corpus_stability(corpus_samples, ud_results, output)
+
+
 def paper_command(args) -> None:
     root = Path(args.results_dir)
     output = Path(args.output_dir) if args.output_dir else root / "paper"
@@ -98,9 +122,13 @@ def build_parser() -> argparse.ArgumentParser:
     text_parser = commands.add_parser("text", help="Calculate F(lambda) from raw text")
     text_parser.add_argument("input")
     text_parser.add_argument("--format", choices=("text", "lines", "tokenized"), default="text")
-    text_parser.add_argument("--apply-splitter", choices=("chinese", "japanese", "korean", "flores-spm", "default"), default="default",
-                             help="Use this flag to split Chinese, Japanese, and Korean characters into separate tokens. \
-                             The flores-spm option uses the SentencePiece model trained on FLORES-200 data to tokenize all languages.")
+    text_parser.add_argument(
+        "--apply-splitter",
+        choices=("chinese", "japanese", "korean", "flores-spm", "default"),
+        default="default",
+        help="Use this flag to split Chinese, Japanese, and Korean characters into separate tokens. \
+                             The flores-spm option uses the SentencePiece model trained on FLORES-200 data to tokenize all languages.",
+    )
     text_parser.add_argument("--keep-case", action="store_true")
     text_parser.add_argument("--pairs", action="store_true", help="Include qualifying pair-level values")
     text_parser.add_argument("--output")
@@ -127,6 +155,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Plot raw instead of TTR-controlled values",
     )
     analysis_parser.set_defaults(function=analyze_command)
+
+    corpus_parser = commands.add_parser("corpus-analysis", help="Generate external-corpus tables and plots")
+    corpus_parser.add_argument("results_dir", help="Experiment output directory")
+    corpus_parser.add_argument("--output-dir", help="Default: RESULTS_DIR/corpus-analysis")
+    corpus_parser.set_defaults(function=corpus_analysis_command)
 
     paper_parser = commands.add_parser("paper", help="Generate all paper artifacts")
     paper_parser.add_argument("results_dir", help="Experiment output directory")

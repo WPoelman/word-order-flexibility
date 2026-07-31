@@ -78,21 +78,6 @@ produces a decay-profile plot.
 
 Install the cluster dependencies and inspect the [planit](https://github.com/WPoelman/planit) graph:
 
-Paper plots require a TeX installation because Matplotlib uses LaTeX for their
-text. Check for it before submitting:
-
-```bash
-command -v latex
-latex --version
-module spider texlive
-```
-
-If TeX is provided as a module, load it before submission:
-
-```bash
-module load texlive
-```
-
 Raw Wikipedia processing also requires the WTPSplit model. Cache it once in the
 shared environment before submission:
 
@@ -122,8 +107,18 @@ uv run --group cluster python experiment.py \
 ```
 
 The plan runs the broad and Futrell 1,000-sentence samples and the fixed-sample
-1,000/2,000/5,000/10,000-sentence study. Paper figures, analyses, and tables are
-written to `results/paper`.
+1,000/2,000/5,000/10,000-sentence study. Cluster jobs stop after writing the
+combined CSV files; they do not require TeX or generate plots.
+
+Download a fresh 5,000-document Wikipedia sample. Use a new output directory so
+older script-duplicate files are not reused:
+
+```bash
+uv run python process_flores_bible_wiki.py wikipedia \
+  --output-dir data/wikipedia-5000 \
+  --documents 5000 \
+  --seed 0
+```
 
 FLORES, Bible, and Wikipedia inputs can be included as parallel branches:
 
@@ -132,7 +127,8 @@ uv run --group cluster python experiment.py \
   --corpora-only \
   --flores-dir data/flores \
   --bible-dir data/taxi-1500-pre-train \
-  --wikipedia-dir data/wikipedia \
+  --wikipedia-dir data/wikipedia-5000 \
+  --wikipedia-min-words 5 \
   --corpus-sentences 1000 \
   --corpus-samples 10 \
   --corpus-sample-sentences 1000 \
@@ -144,14 +140,25 @@ uv run --group cluster python experiment.py \
   --submit
 ```
 
-Every included language must contain at least the requested number of
-sentences. Each language is segmented once; the same in-memory sentences are
-used for the deterministic prefix and ten seeded random samples without
-replacement. Raw and separately TTR-controlled correlations, sample-level
-tables, rank reliability, and stability plots are written to
-`results/corpus-analysis`. FLORES inputs combine its `dev` and `devtest`
-splits.
+Wikipedia fragments shorter than five tokenized words are removed after sentence
+segmentation. Languages with fewer than the requested number of remaining
+sentences are excluded without failing the experiment and listed in
+`<corpus>_exclusions.csv`. Each language is segmented once; the same in-memory sentences are used for the
+deterministic prefix and ten seeded random samples without replacement. FLORES
+inputs combine its `dev` and `devtest` splits. The cluster jobs stop after writing
+`results.csv` and `samples.csv` for each corpus.
 
+After copying the completed `results` directory to a machine with TeX, generate
+the corpus analyses and the paper artifacts locally:
+
+```bash
+uv run word-flexibility corpus-analysis results
+uv run word-flexibility paper results
+```
+
+The first command writes exclusions, correlations, reliability tables, and corpus
+plots to `results/corpus-analysis`. The second writes the UD paper artifacts to
+`results/paper`.
 
 ## Tests
 

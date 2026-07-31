@@ -25,7 +25,7 @@ def paper_style() -> dict:
         "text.usetex": True,
         "text.latex.preamble": r"\usepackage{newtxtext}",
         "font.family": "serif",
-        "font.serif": ["Times New Roman", "DejaVu Serif", "Liberation Serif"],
+        "font.serif": ["Computer Modern Roman"],
         "font.size": 9,
         "axes.labelsize": 9,
         "axes.titlesize": 9,
