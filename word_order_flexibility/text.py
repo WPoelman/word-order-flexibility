@@ -1,3 +1,4 @@
+import os
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -36,8 +37,9 @@ def _sentence_segmenter():
     import onnxruntime as ort
     from wtpsplit import SaT
 
+    threads = max(1, int(os.environ.get("SLURM_CPUS_PER_TASK", "1")))
     session_options = ort.SessionOptions()
-    session_options.intra_op_num_threads = 1
+    session_options.intra_op_num_threads = threads
     session_options.inter_op_num_threads = 1
     return SaT(
         "sat-3l-sm",

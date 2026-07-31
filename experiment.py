@@ -119,35 +119,44 @@ def available_languages(ud_root: Path, languages, n_sentences: int):
 
 
 def experiment_branch(name, languages, sizes, ud_root, output_root, metric_resources, small_resources):
-    outputs = []
-    steps = []
+    jobs = []
     for size in sizes:
         for language, treebanks in languages:
             output = output_root / name / "languages" / str(size) / f"{language.replace(' ', '_')}.json"
-            outputs.append(str(output))
+            jobs.append((language, treebanks, size, output))
+
+    batch_branches = []
+    batch_results = []
+    for batch_index, start in enumerate(range(0, len(jobs), DEPENDENCY_BATCH_SIZE)):
+        batch = jobs[start : start + DEPENDENCY_BATCH_SIZE]
+        outputs = [str(output) for _language, _treebanks, _size, output in batch]
+        steps = []
+        for language, treebanks, size, output in batch:
+            if valid_json(output):
+                continue
             steps.append(
                 Step(
                     f"{name}-{size}-{language}",
                     metric_resources,
-                    partial(
-                        run_language,
-                        language,
-                        treebanks,
-                        str(ud_root),
-                        size,
-                        str(output),
-                    ),
+                    partial(run_language, language, treebanks, str(ud_root), size, str(output)),
                 )
             )
-    combined = output_root / name / "results.csv"
-    return Chain(
-        Parallel(*steps),
-        Step(
-            f"combine-{name}",
+        batch_result = output_root / name / "_batches" / f"{batch_index:03d}-results.csv"
+        batch_results.append(str(batch_result))
+        collector = Step(
+            f"combine-{name}-{batch_index:03d}",
             small_resources,
-            partial(combine_results, outputs, str(combined)),
-        ),
-    ), combined
+            partial(combine_results, outputs, str(batch_result)),
+        )
+        batch_branches.append(Chain(Parallel(*steps), collector) if steps else collector)
+
+    combined = output_root / name / "results.csv"
+    final_collector = Step(
+        f"combine-{name}",
+        small_resources,
+        partial(merge_csv_files, batch_results, str(combined)),
+    )
+    return Chain(Parallel(*batch_branches), final_collector), combined
 
 
 def script_splitter(code: str) -> str:
@@ -272,6 +281,7 @@ def build_plan(args) -> Plan:
         common["mail_user"] = args.email
     metric_resources = SlurmArgs(**common)
     small_resources = SlurmArgs(**{**common, "cpus_per_task": 1})
+    wikipedia_resources = SlurmArgs(**{**common, "cpus_per_task": args.wikipedia_cpus})
 
     parallel_branches = []
     if not args.corpora_only:
@@ -295,11 +305,11 @@ def build_plan(args) -> Plan:
         )
         parallel_branches.extend((all_branch, futrell_branch, size_branch))
     corpus_settings = (
-        ("flores", args.flores_dir, "lines", 1),
-        ("bible", args.bible_dir, "tokenized", 1),
-        ("wikipedia", args.wikipedia_dir, "text", args.wikipedia_min_words),
+        ("flores", args.flores_dir, "lines", 1, metric_resources),
+        ("bible", args.bible_dir, "tokenized", 1, metric_resources),
+        ("wikipedia", args.wikipedia_dir, "text", args.wikipedia_min_words, wikipedia_resources),
     )
-    for name, input_dir, input_format, min_sentence_words in corpus_settings:
+    for name, input_dir, input_format, min_sentence_words, resources in corpus_settings:
         if input_dir is None:
             continue
         branch, _combined, _combined_samples = corpus_branch(
@@ -311,7 +321,7 @@ def build_plan(args) -> Plan:
             args.corpus_sample_sentences,
             min_sentence_words,
             args.output_dir,
-            metric_resources,
+            resources,
             small_resources,
         )
         parallel_branches.append(branch)
@@ -328,6 +338,12 @@ def main() -> None:
     parser.add_argument("--flores-dir", type=Path)
     parser.add_argument("--bible-dir", type=Path)
     parser.add_argument("--wikipedia-dir", type=Path)
+    parser.add_argument(
+        "--wikipedia-cpus",
+        type=int,
+        default=8,
+        help="CPUs per Wikipedia job; also controls memory on CPU-scaled clusters",
+    )
     parser.add_argument(
         "--wikipedia-min-words",
         type=int,
@@ -366,6 +382,8 @@ def main() -> None:
     parser.add_argument("--submit", action="store_true")
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
+    if args.wikipedia_cpus < 1:
+        parser.error("--wikipedia-cpus must be at least 1")
     if args.wikipedia_min_words < 1:
         parser.error("--wikipedia-min-words must be at least 1")
     if min(args.corpus_sentences, args.corpus_sample_sentences) < 1000:
