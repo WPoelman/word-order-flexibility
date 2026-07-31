@@ -40,14 +40,36 @@ def calculate_corpus_file(
     sentences = [sentence for sentence in sentences if len(sentence) >= min_sentence_words]
     required = max(n_sentences, sample_sentences if sample_seeds else 0)
     if len(sentences) < required:
-        raise ValueError(f"{code}: found {len(sentences)} sentences; need {required}")
+        exclusion = {
+            "code": code,
+            "excluded": True,
+            "min_sentence_words": min_sentence_words,
+            "available_sentences": len(sentences),
+            "required_sentences": required,
+            "reason": "insufficient_sentences",
+        }
+        output = Path(output_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(exclusion, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        if sample_output_path is not None:
+            sample_output = Path(sample_output_path)
+            sample_output.parent.mkdir(parents=True, exist_ok=True)
+            sample_output.write_text("[]\n", encoding="utf-8")
+        return
 
     result = word_order_flexibility(sentences[:n_sentences], decay=decay)
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
         json.dumps(
-            {"code": code, "min_sentence_words": min_sentence_words, "available_sentences": len(sentences), **result},
+            {
+                "code": code,
+                "excluded": False,
+                "min_sentence_words": min_sentence_words,
+                "available_sentences": len(sentences),
+                "required_sentences": required,
+                **result,
+            },
             indent=2,
             ensure_ascii=False,
         )
@@ -63,6 +85,7 @@ def calculate_corpus_file(
                 {
                     "code": code,
                     "seed": seed,
+                    "excluded": False,
                     "min_sentence_words": min_sentence_words,
                     "available_sentences": len(sentences),
                     **word_order_flexibility(sample, decay=decay),
@@ -80,19 +103,37 @@ def combine_corpus_results(inputs: list[str], output_path: str | Path) -> None:
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        columns = list(dict.fromkeys(key for row in rows for key in row))
+        writer = csv.DictWriter(handle, fieldnames=columns)
         writer.writeheader()
         writer.writerows(rows)
 
 
 def combine_corpus_samples(inputs: list[str], output_path: str | Path) -> None:
     rows = [row for path in inputs for row in json.loads(Path(path).read_text(encoding="utf-8"))]
-    if not rows:
-        raise ValueError("No corpus samples to combine")
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        columns = (
+            list(dict.fromkeys(key for row in rows for key in row))
+            if rows
+            else [
+                "code",
+                "seed",
+                "excluded",
+                "min_sentence_words",
+                "available_sentences",
+                "flexibility",
+                "lambda",
+                "min_pair_count",
+                "qualifying_pairs",
+                "sentences",
+                "tokens",
+                "types",
+                "ttr",
+            ]
+        )
+        writer = csv.DictWriter(handle, fieldnames=columns)
         writer.writeheader()
         writer.writerows(rows)
 
@@ -266,6 +307,9 @@ def analyze_corpus_stability(
     correlations.to_csv(output / "sample_validation_correlations.csv", index=False)
     summaries.to_csv(output / "sample_language_summary.csv", index=False)
     reliability.to_csv(output / "sample_rank_reliability.csv", index=False)
+
+    if correlations.empty:
+        return
 
     _set_style()
     for control, suffix in (("none", "raw"), ("ttr", "ttr")):
