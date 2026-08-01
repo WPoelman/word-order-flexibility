@@ -57,7 +57,7 @@ uv run word-flexibility ud ud/ud-treebanks-v2.17/UD_English-EWT --sentences 1000
 The implementation excludes punctuation tokens, `punct` dependencies, and
 dependencies headed by punctuation. Both frequency-weighted and unweighted UD
 aggregations are returned.
-Flexibility and TTR use integer-ID UD words; multiword-token range rows and
+Flexibility and TTR use case-folded integer-ID UD words; multiword-token range rows and
 empty nodes are not counted as additional observations.
 
 ## Analysis
@@ -106,29 +106,32 @@ uv run --group cluster python experiment.py \
   --submit
 ```
 
-The plan runs the broad and Futrell 1,000-sentence samples and the fixed-sample
-1,000/2,000/5,000/10,000-sentence study. Cluster jobs stop after writing the
-combined CSV files; they do not require TeX or generate plots.
+The plan runs case-folded and case-sensitive versions of the broad and Futrell
+1,000-sentence samples and the fixed-sample 1,000/2,000/5,000/10,000-sentence
+study. The existing `all-1000`, `futrell-1000`, and `sentence-sizes` directories
+contain the case-folded paper results; their `-cased` counterparts provide the
+casing sensitivity analysis. Cluster jobs stop after writing the combined CSV
+files; they do not require TeX or generate plots.
 
 Download a fresh 5,000-document Wikipedia sample. Use a new output directory so
 older script-duplicate files are not reused:
 
 ```bash
-uv run python process_flores_bible_wiki.py wikipedia \
+uv run python process_wikipedia.py \
   --output-dir data/wikipedia-5000 \
   --documents 5000 \
   --seed 0
 ```
 
-FLORES, Bible, and Wikipedia inputs can be included as parallel branches:
+Bible and Wikipedia inputs can be included as parallel branches:
 
 ```bash
 uv run --group cluster python experiment.py \
   --corpora-only \
-  --flores-dir data/flores \
   --bible-dir data/taxi-1500-pre-train \
   --wikipedia-dir data/wikipedia-5000 \
   --wikipedia-min-words 5 \
+  --wikipedia-cpus 8 \
   --corpus-sentences 1000 \
   --corpus-samples 10 \
   --corpus-sample-sentences 1000 \
@@ -142,25 +145,53 @@ uv run --group cluster python experiment.py \
 
 Wikipedia fragments shorter than five tokenized words are removed after sentence
 segmentation. Languages with fewer than the requested number of remaining
-sentences are excluded without failing the experiment and listed in
-`<corpus>_exclusions.csv`. Each language is segmented once; the same in-memory sentences are used for the
-deterministic prefix and ten seeded random samples without replacement. FLORES
-inputs combine its `dev` and `devtest` splits. The cluster jobs stop after writing
+sentences are excluded without failing the experiment and retained as excluded
+rows in the corresponding `results.csv`. Each language is segmented once; the same in-memory sentences
+are used for the
+deterministic prefix and ten seeded random samples without replacement. The
+cluster jobs stop after writing
 `results.csv` and `samples.csv` for each corpus. Collector dependencies are reduced
 in batches of 50. Resubmission reuses valid per-language JSON outputs and schedules
 only missing language calculations.
 
 After copying the completed `results` directory to a machine with TeX, generate
-the corpus analyses and the paper artifacts locally:
+the corpus analysis locally:
 
 ```bash
 uv run word-flexibility corpus-analysis results
-uv run word-flexibility paper results
 ```
 
-The first command writes exclusions, correlations, reliability tables, and corpus
-plots to `results/corpus-analysis`. The second writes the UD paper artifacts to
-`results/paper`.
+This writes correlations, overlap tables, reliability tables, and corpus plots to
+`results/corpus-analysis`.
+
+### Disjoint cross-domain study
+
+Run five disjoint 1,000-sentence samples for the matched 20-language UD, Bible, and Wikipedia set:
+
+```bash
+uv run --group cluster python experiment.py \
+  --ud-path /path/to/ud-treebanks-v2.17 \
+  --bible-dir /path/to/bible \
+  --wikipedia-dir /path/to/wikipedia \
+  --wikipedia-min-words 5 \
+  --wikipedia-cpus 8 \
+  --output-dir results \
+  --disjoint-domain-study \
+  --partition batch \
+  --cluster wice \
+  --account YOUR_ACCOUNT \
+  --email YOUR_EMAIL \
+  --submit
+```
+
+Generate the compact plots locally after copying the results, then generate the
+paper artifacts. This order ensures the appendix language-set table includes both
+corpus studies:
+
+```bash
+uv run word-flexibility disjoint-domain-analysis results/disjoint-domain-study
+uv run word-flexibility paper results
+```
 
 ## Tests
 

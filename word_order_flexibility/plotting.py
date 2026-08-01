@@ -154,23 +154,18 @@ def _validation_panel(ax, all_results: pd.DataFrame, futrell_results: pd.DataFra
     data = all_results[["Language", FLEX, target, TTR]].dropna().copy()
     data["x"] = residualize(data[target], data[TTR])
     data["y"] = residualize(data[FLEX], data[TTR])
-    futrell_languages = set(futrell_results["Language"])
-    selected = all_results[all_results["Language"].isin(futrell_languages)][
-        ["Language", FLEX, target, TTR]
-    ].dropna().copy()
+    selected = futrell_results[["Language", FLEX, target, TTR]].dropna().copy()
     selected["x"] = residualize(selected[target], selected[TTR])
     selected["y"] = residualize(selected[FLEX], selected[TTR])
-    other = data[~data["Language"].isin(futrell_languages)]
-
     ax.scatter(
-        other["x"],
-        other["y"],
+        data["x"],
+        data["y"],
         s=14,
         color=MID_GRAY,
         alpha=0.42,
         edgecolor="white",
         linewidth=0.35,
-        label=rf"Other UD ($n={len(other)}$)",
+        label=rf"All UD ($n={len(data)}$)",
         zorder=1,
     )
     ax.scatter(
@@ -181,7 +176,7 @@ def _validation_panel(ax, all_results: pd.DataFrame, futrell_results: pd.DataFra
         alpha=0.78,
         edgecolor="white",
         linewidth=0.45,
-        label=rf"Futrell ($n={len(selected)}$)",
+        label=rf"Futrell treebanks ($n={len(selected)}$)",
         zorder=2,
     )
     for subset, color, label in (
@@ -444,7 +439,9 @@ def bakker_figures(results: pd.DataFrame, bakker: pd.DataFrame, output: Path) ->
                 continue
             if column_index == row_index:
                 ax.add_patch(
-                    plt.Rectangle((column_index, row_index), 1, 1, facecolor=LIGHT_GRAY, edgecolor="white", linewidth=0.35)
+                    plt.Rectangle(
+                        (column_index, row_index), 1, 1, facecolor=LIGHT_GRAY, edgecolor="white", linewidth=0.35
+                    )
                 )
                 ax.text(
                     column_index + 0.5,
@@ -840,6 +837,8 @@ def analysis_language_sets(
     sizes: pd.DataFrame,
     bakker: pd.DataFrame,
     output: Path,
+    common_corpus_codes: list[str] | None = None,
+    disjoint_codes: list[str] | None = None,
 ) -> None:
     bakker_names = set(bakker["Language"].replace({"Greek": "Modern Greek"}))
     largest = sizes[sizes.n_sentences == sizes.n_sentences.max()]
@@ -849,6 +848,10 @@ def analysis_language_sets(
         ("Futrell overlap", sorted(set(futrell.Language))),
         ("Bakker overlap", sorted(set(all_results.Language) & bakker_names)),
     ]
+    if common_corpus_codes:
+        sets.append(("Corpus consistency and cross-corpus comparison", sorted(common_corpus_codes)))
+    if disjoint_codes:
+        sets.append(("Disjoint cross-domain robustness study", sorted(disjoint_codes)))
     markdown = ["# Language sets by analysis", "", "| Analysis | n | Languages |", "| --- | ---: | --- |"]
     for label, languages in sets:
         markdown.append(f"| {label} | {len(languages)} | {', '.join(languages)} |")
@@ -975,7 +978,15 @@ def appendix_table(results: pd.DataFrame, bakker: pd.DataFrame, output: Path) ->
     (output / "appendix-language-metrics-table.tex").write_text("\n".join(lines), encoding="utf-8")
 
 
-def generate_paper_artifacts(all_csv: str, futrell_csv: str, sizes_csv: str, bakker_csv: str, output_dir: str) -> None:
+def generate_paper_artifacts(
+    all_csv: str,
+    futrell_csv: str,
+    sizes_csv: str,
+    bakker_csv: str,
+    output_dir: str,
+    common_corpus_languages_csv: str | None = None,
+    disjoint_languages_csv: str | None = None,
+) -> None:
     _set_style()
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
@@ -983,13 +994,19 @@ def generate_paper_artifacts(all_csv: str, futrell_csv: str, sizes_csv: str, bak
     futrell = pd.read_csv(futrell_csv)
     sizes = pd.read_csv(sizes_csv)
     bakker = pd.read_csv(bakker_csv)
+    common_corpus_codes = None
+    if common_corpus_languages_csv and Path(common_corpus_languages_csv).is_file():
+        common_corpus_codes = pd.read_csv(common_corpus_languages_csv)["code"].dropna().tolist()
+    disjoint_codes = None
+    if disjoint_languages_csv and Path(disjoint_languages_csv).is_file():
+        disjoint_codes = pd.read_csv(disjoint_languages_csv)["code"].dropna().tolist()
     plot_validation(all_results, futrell, output)
     lambda_analysis(all_results, output)
     bakker_figures(all_results, bakker, output)
     sentence_size_figures(sizes, output)
     plot_language_trajectories(sizes, output)
     futrell_ranks(futrell, output)
-    analysis_language_sets(all_results, futrell, sizes, bakker, output)
+    analysis_language_sets(all_results, futrell, sizes, bakker, output, common_corpus_codes, disjoint_codes)
     appendix_table(all_results, bakker, output)
     metadata = {
         "all_languages": all_results.Language.nunique(),

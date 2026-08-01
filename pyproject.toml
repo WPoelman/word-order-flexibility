@@ -18,7 +18,6 @@ dependencies = [
   "sacrebleu[ja,ko]>=2.6.0",
   "scipy>=1.12",
   "seaborn>=0.13",
-  "sentencepiece>=0.2.2",
   "tqdm>=4.66",
   "wtpsplit[onnx-cpu]>=2.2,<3",
 ]
@@ -52,4 +51,3 @@ cluster = [
   "planit @ git+https://github.com/WPoelman/planit.git@v1.2.0",
   "submitit>=1.5",
 ]
-

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .analysis import correlations
 from .corpora import analyze_corpora, analyze_corpus_stability
+from .disjoint import analyze_disjoint_study
 from .flexibility import flexibility_profile, word_order_flexibility
 from .plotting import generate_paper_artifacts, profile_plot, validation_plot
 from .text import read_sentences
@@ -86,7 +87,7 @@ def corpus_analysis_command(args) -> None:
     output = Path(args.output_dir) if args.output_dir else root / "corpus-analysis"
     corpus_results = []
     corpus_samples = []
-    for name in ("flores", "bible", "wikipedia"):
+    for name in ("bible", "wikipedia"):
         results = root / name / "results.csv"
         samples = root / name / "samples.csv"
         if results.is_file():
@@ -100,7 +101,11 @@ def corpus_analysis_command(args) -> None:
         raise FileNotFoundError(f"UD validation results not found: {ud_results}")
     analyze_corpora(corpus_results, ud_results, output)
     if corpus_samples:
-        analyze_corpus_stability(corpus_samples, ud_results, output)
+        analyze_corpus_stability(corpus_samples, ud_results, output, corpus_results)
+
+
+def disjoint_analysis_command(args) -> None:
+    analyze_disjoint_study(args.results_dir, args.output_dir)
 
 
 def paper_command(args) -> None:
@@ -112,6 +117,8 @@ def paper_command(args) -> None:
         str(root / "sentence-sizes" / "results.csv"),
         args.bakker,
         str(output),
+        str(root / "corpus-analysis" / "common_corpus_languages.csv"),
+        str(root / "disjoint-domain-study" / "analysis" / "languages.csv"),
     )
 
 
@@ -124,10 +131,9 @@ def build_parser() -> argparse.ArgumentParser:
     text_parser.add_argument("--format", choices=("text", "lines", "tokenized"), default="text")
     text_parser.add_argument(
         "--apply-splitter",
-        choices=("chinese", "japanese", "korean", "flores-spm", "default"),
+        choices=("chinese", "japanese", "korean", "default"),
         default="default",
-        help="Use this flag to split Chinese, Japanese, and Korean characters into separate tokens. \
-                             The flores-spm option uses the SentencePiece model trained on FLORES-200 data to tokenize all languages.",
+        help="Use this flag to select the tokenizer for Chinese, Japanese, or Korean text.",
     )
     text_parser.add_argument("--keep-case", action="store_true")
     text_parser.add_argument("--pairs", action="store_true", help="Include qualifying pair-level values")
@@ -160,6 +166,14 @@ def build_parser() -> argparse.ArgumentParser:
     corpus_parser.add_argument("results_dir", help="Experiment output directory")
     corpus_parser.add_argument("--output-dir", help="Default: RESULTS_DIR/corpus-analysis")
     corpus_parser.set_defaults(function=corpus_analysis_command)
+
+    disjoint_parser = commands.add_parser(
+        "disjoint-domain-analysis",
+        help="Analyze the matched disjoint UD, Bible, and Wikipedia study",
+    )
+    disjoint_parser.add_argument("results_dir", help="The disjoint-domain-study output directory")
+    disjoint_parser.add_argument("--output-dir")
+    disjoint_parser.set_defaults(function=disjoint_analysis_command)
 
     paper_parser = commands.add_parser("paper", help="Generate all paper artifacts")
     paper_parser.add_argument("results_dir", help="Experiment output directory")

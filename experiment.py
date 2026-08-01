@@ -15,11 +15,21 @@ from word_order_flexibility.corpora import (
     combine_corpus_results,
     combine_corpus_samples,
     merge_csv_files,
+    valid_corpus_outputs,
+)
+from word_order_flexibility.disjoint import (
+    DISJOINT_CODES,
+    TOTAL_SENTENCES,
+    calculate_disjoint_text,
+    calculate_disjoint_ud,
+    combine_disjoint_results,
+    valid_disjoint_result,
 )
 from word_order_flexibility.flexibility import flexibility_profile
-from word_order_flexibility.languages import FUTRELL_LANGUAGES, LANGUAGES
+from word_order_flexibility.languages import FUTRELL_LANGUAGES, LANGUAGES, UD_MAPPING
 from word_order_flexibility.ud import (
     calculate_ud_metrics,
+    count_single_root_sentences,
     load_conllu,
     surface_sentences,
 )
@@ -27,6 +37,7 @@ from word_order_flexibility.ud import (
 DECAYS = (0.25, 0.5, 0.75, 1.0)
 SENTENCE_SIZES = (1000, 2000, 5000, 10000)
 DEPENDENCY_BATCH_SIZE = 50
+UD_EXPERIMENT_VERSION = 3
 
 
 def lambda_label(value: float) -> str:
@@ -44,16 +55,19 @@ def run_language(
     ud_root: str,
     n_sentences: int,
     output: str,
+    lowercase: bool = True,
 ) -> None:
     """Compute the word-level metrics used in the paper experiments."""
-    sentences = load_conllu(treebank_paths(ud_root, treebanks), limit=n_sentences)
+    sentences = load_conllu(treebank_paths(ud_root, treebanks), limit=n_sentences, single_root_only=True)
     if len(sentences) < n_sentences:
         raise ValueError(f"{language}: found {len(sentences)} sentences; need {n_sentences}")
-    words = surface_sentences(sentences)
+    words = surface_sentences(sentences, lowercase=lowercase)
     ud = calculate_ud_metrics(sentences)
     profile = flexibility_profile(words, DECAYS)
     primary = next(row for row in profile if row["lambda"] == 0.5)
     row = {
+        "experiment_version": UD_EXPERIMENT_VERSION,
+        "casefolded": lowercase,
         "Language": language,
         "n_sentences": n_sentences,
         "HDE": ud["head_direction_entropy_weighted"],
@@ -85,40 +99,42 @@ def combine_results(inputs: list[str], output: str) -> None:
         writer.writerows(rows)
 
 
-def count_sentences(paths: list[str], stop_at: int) -> int:
-    """Count CoNLL-U sentence blocks without parsing them."""
-    count = 0
-    for configured in paths:
-        path = Path(configured)
-        files = []
-        for split in ("train", "dev", "test"):
-            files.extend(sorted(path.rglob(f"*{split}.conllu")))
-        for file in files:
-            previous_blank = True
-            with file.open(encoding="utf-8") as handle:
-                for line in handle:
-                    blank = not line.strip()
-                    if blank and not previous_blank:
-                        count += 1
-                        if count >= stop_at:
-                            return count
-                    previous_blank = blank
-            if not previous_blank:
-                count += 1
-                if count >= stop_at:
-                    return count
-    return count
-
-
 def available_languages(ud_root: Path, languages, n_sentences: int):
     return [
         (language, treebanks)
         for language, treebanks in languages
-        if count_sentences(treebank_paths(str(ud_root), treebanks), n_sentences) >= n_sentences
+        if count_single_root_sentences(treebank_paths(str(ud_root), treebanks), n_sentences) >= n_sentences
     ]
 
 
-def experiment_branch(name, languages, sizes, ud_root, output_root, metric_resources, small_resources):
+def valid_ud_result(path: Path, language: str, n_sentences: int, *, lowercase: bool) -> bool:
+    """Return whether a cached UD result matches the current experiment."""
+    if not path.is_file():
+        return False
+    try:
+        row = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return (
+        isinstance(row, dict)
+        and row.get("experiment_version") == UD_EXPERIMENT_VERSION
+        and row.get("Language") == language
+        and row.get("n_sentences") == n_sentences
+        and row.get("casefolded") is lowercase
+    )
+
+
+def experiment_branch(
+    name,
+    languages,
+    sizes,
+    ud_root,
+    output_root,
+    metric_resources,
+    small_resources,
+    *,
+    lowercase=True,
+):
     jobs = []
     for size in sizes:
         for language, treebanks in languages:
@@ -132,13 +148,13 @@ def experiment_branch(name, languages, sizes, ud_root, output_root, metric_resou
         outputs = [str(output) for _language, _treebanks, _size, output in batch]
         steps = []
         for language, treebanks, size, output in batch:
-            if valid_json(output):
+            if valid_ud_result(output, language, size, lowercase=lowercase):
                 continue
             steps.append(
                 Step(
                     f"{name}-{size}-{language}",
                     metric_resources,
-                    partial(run_language, language, treebanks, str(ud_root), size, str(output)),
+                    partial(run_language, language, treebanks, str(ud_root), size, str(output), lowercase),
                 )
             )
         batch_result = output_root / name / "_batches" / f"{batch_index:03d}-results.csv"
@@ -214,7 +230,15 @@ def corpus_branch(
             sample_output = output_root / name / "samples" / f"{code}.json"
             outputs.append(str(output))
             sample_outputs.append(str(sample_output))
-            if valid_json(output) and valid_json(sample_output):
+            if valid_corpus_outputs(
+                output,
+                sample_output,
+                code=code,
+                n_sentences=n_sentences,
+                sample_count=sample_count,
+                sample_sentences=sample_sentences,
+                min_sentence_words=min_sentence_words,
+            ):
                 continue
             language_steps.append(
                 Step(
@@ -267,6 +291,85 @@ def corpus_branch(
     return Chain(Parallel(*batch_branches), final_collectors), combined, combined_samples
 
 
+def disjoint_domain_branch(args, metric_resources, wikipedia_resources, small_resources):
+    """Build three parallel branches for the matched disjoint-sample study."""
+    root = args.output_dir / "disjoint-domain-study"
+    branches = []
+
+    ud_outputs = []
+    ud_steps = []
+    for code in DISJOINT_CODES:
+        language = UD_MAPPING[code]
+        paths = treebank_paths(str(args.ud_path), LANGUAGES[language])
+        available = count_single_root_sentences(paths, TOTAL_SENTENCES)
+        if available < TOTAL_SENTENCES:
+            raise ValueError(f"{code}: found {available} single-root UD sentences; need {TOTAL_SENTENCES}")
+        output = root / "ud" / "languages" / f"{code}.json"
+        ud_outputs.append(str(output))
+        if not valid_disjoint_result(output, code):
+            ud_steps.append(
+                Step(
+                    f"disjoint-ud-{code}",
+                    metric_resources,
+                    partial(
+                        calculate_disjoint_ud,
+                        code,
+                        paths,
+                        str(output),
+                    ),
+                )
+            )
+    ud_combined = root / "ud" / "results.csv"
+    ud_collector = Step(
+        "combine-disjoint-ud",
+        small_resources,
+        partial(combine_disjoint_results, ud_outputs, str(ud_combined)),
+    )
+    branches.append(Chain(Parallel(*ud_steps), ud_collector) if ud_steps else ud_collector)
+
+    corpus_settings = (
+        ("bible", args.bible_dir, "tokenized", 1, metric_resources),
+        ("wikipedia", args.wikipedia_dir, "text", args.wikipedia_min_words, wikipedia_resources),
+    )
+    for name, input_dir, input_format, min_words, resources in corpus_settings:
+        files = {path.stem: path for path in Path(input_dir).glob("*.txt")}
+        if name == "bible":
+            files = {code: path for code, path in files.items() if not code.endswith("-sampled")}
+        missing = sorted(set(DISJOINT_CODES) - set(files))
+        if missing:
+            raise FileNotFoundError(f"{name}: missing input files for {', '.join(missing)}")
+        outputs = []
+        steps = []
+        for code in DISJOINT_CODES:
+            output = root / name / "languages" / f"{code}.json"
+            outputs.append(str(output))
+            if valid_disjoint_result(output, code):
+                continue
+            steps.append(
+                Step(
+                    f"disjoint-{name}-{code}",
+                    resources,
+                    partial(
+                        calculate_disjoint_text,
+                        code,
+                        str(files[code]),
+                        str(output),
+                        input_format=input_format,
+                        splitter=script_splitter(code),
+                        min_sentence_words=min_words,
+                    ),
+                )
+            )
+        combined = root / name / "results.csv"
+        collector = Step(
+            f"combine-disjoint-{name}",
+            small_resources,
+            partial(combine_disjoint_results, outputs, str(combined)),
+        )
+        branches.append(Chain(Parallel(*steps), collector) if steps else collector)
+    return Parallel(*branches)
+
+
 def build_plan(args) -> Plan:
     common = {
         "time": args.time,
@@ -283,29 +386,50 @@ def build_plan(args) -> Plan:
     small_resources = SlurmArgs(**{**common, "cpus_per_task": 1})
     wikipedia_resources = SlurmArgs(**{**common, "cpus_per_task": args.wikipedia_cpus})
 
+    if args.disjoint_domain_study:
+        return Plan(
+            "word-order-flexibility-disjoint",
+            disjoint_domain_branch(args, metric_resources, wikipedia_resources, small_resources),
+        )
+
     parallel_branches = []
     if not args.corpora_only:
         broad = available_languages(args.ud_path, list(LANGUAGES.items()), 1000)
         futrell = available_languages(args.ud_path, FUTRELL_LANGUAGES, 1000)
         common_sizes = available_languages(args.ud_path, list(LANGUAGES.items()), max(SENTENCE_SIZES))
-        all_branch, _all_results = experiment_branch(
-            "all-1000", broad, (1000,), args.ud_path, args.output_dir, metric_resources, small_resources
-        )
-        futrell_branch, _futrell_results = experiment_branch(
-            "futrell-1000", futrell, (1000,), args.ud_path, args.output_dir, metric_resources, small_resources
-        )
-        size_branch, _size_results = experiment_branch(
-            "sentence-sizes",
-            common_sizes,
-            SENTENCE_SIZES,
-            args.ud_path,
-            args.output_dir,
-            metric_resources,
-            small_resources,
-        )
-        parallel_branches.extend((all_branch, futrell_branch, size_branch))
+        for suffix, lowercase in (("", True), ("-cased", False)):
+            all_branch, _all_results = experiment_branch(
+                f"all-1000{suffix}",
+                broad,
+                (1000,),
+                args.ud_path,
+                args.output_dir,
+                metric_resources,
+                small_resources,
+                lowercase=lowercase,
+            )
+            futrell_branch, _futrell_results = experiment_branch(
+                f"futrell-1000{suffix}",
+                futrell,
+                (1000,),
+                args.ud_path,
+                args.output_dir,
+                metric_resources,
+                small_resources,
+                lowercase=lowercase,
+            )
+            size_branch, _size_results = experiment_branch(
+                f"sentence-sizes{suffix}",
+                common_sizes,
+                SENTENCE_SIZES,
+                args.ud_path,
+                args.output_dir,
+                metric_resources,
+                small_resources,
+                lowercase=lowercase,
+            )
+            parallel_branches.extend((all_branch, futrell_branch, size_branch))
     corpus_settings = (
-        ("flores", args.flores_dir, "lines", 1, metric_resources),
         ("bible", args.bible_dir, "tokenized", 1, metric_resources),
         ("wikipedia", args.wikipedia_dir, "text", args.wikipedia_min_words, wikipedia_resources),
     )
@@ -335,7 +459,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ud-path", type=Path, default=Path("ud/ud-treebanks-v2.17"))
     parser.add_argument("--output-dir", type=Path, default=Path("results"))
-    parser.add_argument("--flores-dir", type=Path)
     parser.add_argument("--bible-dir", type=Path)
     parser.add_argument("--wikipedia-dir", type=Path)
     parser.add_argument(
@@ -375,6 +498,11 @@ def main() -> None:
     parser.add_argument("--cpus", type=int, default=1)
     parser.add_argument("--email", help="Email address for Slurm failure notifications")
     parser.add_argument(
+        "--disjoint-domain-study",
+        action="store_true",
+        help="Run only the matched five-by-1,000 disjoint UD, Bible, and Wikipedia study",
+    )
+    parser.add_argument(
         "--corpora-only",
         action="store_true",
         help="Run only external-corpus calculation and combination jobs",
@@ -391,7 +519,12 @@ def main() -> None:
     if args.corpus_samples < 2:
         parser.error("--corpus-samples must be at least 2")
 
-    corpus_dirs = (args.flores_dir, args.bible_dir, args.wikipedia_dir)
+    if args.disjoint_domain_study and (args.bible_dir is None or args.wikipedia_dir is None):
+        parser.error("--disjoint-domain-study requires --bible-dir and --wikipedia-dir")
+    if args.disjoint_domain_study and args.corpora_only:
+        parser.error("--disjoint-domain-study cannot be combined with --corpora-only")
+
+    corpus_dirs = (args.bible_dir, args.wikipedia_dir)
     if args.corpora_only and not any(corpus_dirs):
         parser.error("--corpora-only requires at least one external corpus directory")
     if not args.corpora_only and not args.ud_path.is_dir():

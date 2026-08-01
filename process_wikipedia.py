@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from collections import defaultdict
 from pathlib import Path
 
 import regex
@@ -18,25 +17,6 @@ def wikipedia_languages() -> dict[str, tuple[str, list[str]]]:
         if language.wikipedia and language.wikipedia.code and language.iso_639_3 and language.script_codes:
             mappings[language.wikipedia.code] = (language.iso_639_3, language.script_codes)
     return mappings
-
-
-def save_flores(output_dir: str | Path = "data/flores") -> None:
-    output = Path(output_dir)
-    output.mkdir(parents=True, exist_ok=True)
-    datasets = load_dataset("openlanguagedata/flores_plus", split=["dev", "devtest"])
-
-    texts_by_language = defaultdict(list)
-    for dataset in datasets:
-        for language, script, text in zip(
-            dataset["iso_639_3"],
-            dataset["iso_15924"],
-            dataset["text"],
-            strict=True,
-        ):
-            texts_by_language[f"{language}_{script}"].append(text)
-
-    for code, texts in tqdm(texts_by_language.items(), desc="Writing FLORES files"):
-        (output / f"{code}.txt").write_text("\n".join(texts) + "\n", encoding="utf-8")
 
 
 SCRIPT_ALIASES = {
@@ -97,19 +77,11 @@ def save_wikipedias(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("corpus", choices=("flores", "wikipedia"))
-    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--output-dir", type=Path, default=Path("data/wikipedia"))
     parser.add_argument("--documents", type=int, default=2000)
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
-    if args.corpus == "flores":
-        save_flores(args.output_dir or Path("data/flores"))
-    else:
-        save_wikipedias(
-            args.output_dir or Path("data/wikipedia"),
-            documents=args.documents,
-            seed=args.seed,
-        )
+    save_wikipedias(args.output_dir, documents=args.documents, seed=args.seed)
 
 
 if __name__ == "__main__":

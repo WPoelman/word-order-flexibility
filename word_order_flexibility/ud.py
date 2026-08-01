@@ -1,3 +1,4 @@
+import random
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from pathlib import Path
@@ -23,8 +24,13 @@ def chao_shen_entropy(values: Iterable) -> float:
     return max(0.0, float(entropy))
 
 
-def load_conllu(paths: Iterable[str | Path], limit: int | None = None) -> list:
-    """Load CoNLL-U data in the original train, dev, test experiment order."""
+def load_conllu(
+    paths: Iterable[str | Path],
+    limit: int | None = None,
+    *,
+    single_root_only: bool = False,
+) -> list:
+    """Load CoNLL-U data in train, dev, test order."""
     sentences = []
     files = []
     for path_value in paths:
@@ -37,16 +43,30 @@ def load_conllu(paths: Iterable[str | Path], limit: int | None = None) -> list:
     for path in files:
         with path.open(encoding="utf-8") as handle:
             for sentence in conllu.parse_incr(handle):
+                if single_root_only and not is_single_root(sentence):
+                    continue
                 sentences.append(sentence)
                 if limit is not None and len(sentences) >= limit:
                     return sentences
     return sentences
 
 
-def surface_sentences(ud_sentences: Iterable) -> list[list[str]]:
-    """Extract case-sensitive integer-ID UD words while omitting punctuation."""
+def is_single_root(sentence) -> bool:
+    """Return whether a UD sentence has exactly one integer-token root."""
+    return sum(1 for token in sentence if isinstance(token.get("id"), int) and token.get("head") == 0) == 1
+
+
+def surface_sentences(ud_sentences: Iterable, *, lowercase: bool = True) -> list[list[str]]:
+    """Extract integer-ID UD words while omitting punctuation.
+
+    Forms are case-folded by default to match raw-text preprocessing.
+    """
     return [
-        [token["form"] for token in sentence if isinstance(token.get("id"), int) and token.get("upos") != "PUNCT"]
+        [
+            token["form"].casefold() if lowercase else token["form"]
+            for token in sentence
+            if isinstance(token.get("id"), int) and token.get("upos") != "PUNCT"
+        ]
         for sentence in ud_sentences
     ]
 
@@ -64,10 +84,9 @@ def calculate_ud_metrics(ud_sentences: Iterable) -> dict[str, float | int]:
     accepted = 0
 
     for sentence in ud_sentences:
-        tokens = {token["id"]: token for token in sentence if isinstance(token.get("id"), int)}
-        roots = [token for token in tokens.values() if token.get("head") == 0]
-        if len(roots) != 1:
+        if not is_single_root(sentence):
             continue
+        tokens = {token["id"]: token for token in sentence if isinstance(token.get("id"), int)}
         accepted += 1
         dependents = defaultdict(list)
 
@@ -118,3 +137,75 @@ def calculate_ud_metrics(ud_sentences: Iterable) -> dict[str, float | int]:
         "hde_contexts": len(hde_groups),
         "roe_configurations": len(roe_groups),
     }
+
+
+def sample_conllu(
+    paths: Iterable[str | Path],
+    size: int,
+    *,
+    seed: int = 0,
+    single_root_only: bool = False,
+) -> tuple[list, int]:
+    """Reservoir-sample sentences without loading an entire treebank into memory."""
+    rng = random.Random(seed)
+    reservoir = []
+    seen = 0
+    files = []
+    for path_value in paths:
+        path = Path(path_value)
+        if path.is_dir():
+            for split in ("train", "dev", "test"):
+                files.extend(sorted(path.rglob(f"*{split}.conllu")))
+        else:
+            files.append(path)
+    for path in files:
+        with path.open(encoding="utf-8") as handle:
+            for sentence in conllu.parse_incr(handle):
+                if single_root_only and not is_single_root(sentence):
+                    continue
+                seen += 1
+                if len(reservoir) < size:
+                    reservoir.append(sentence)
+                    continue
+                position = rng.randrange(seen)
+                if position < size:
+                    reservoir[position] = sentence
+    if seen < size:
+        raise ValueError(f"Found {seen} sentences; need {size}")
+    rng.shuffle(reservoir)
+    return reservoir, seen
+
+
+def count_single_root_sentences(paths: Iterable[str | Path], stop_at: int) -> int:
+    """Count single-root CoNLL-U sentences, stopping at the requested threshold."""
+    count = 0
+    files = []
+    for path_value in paths:
+        path = Path(path_value)
+        if path.is_dir():
+            for split in ("train", "dev", "test"):
+                files.extend(sorted(path.rglob(f"*{split}.conllu")))
+        else:
+            files.append(path)
+    for path in files:
+        roots = 0
+        with path.open(encoding="utf-8") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped:
+                    if roots == 1:
+                        count += 1
+                        if count >= stop_at:
+                            return count
+                    roots = 0
+                    continue
+                if stripped.startswith("#"):
+                    continue
+                fields = stripped.split("\t")
+                if fields[0].isdigit() and len(fields) > 6 and fields[6] == "0":
+                    roots += 1
+        if roots == 1:
+            count += 1
+            if count >= stop_at:
+                return count
+    return count

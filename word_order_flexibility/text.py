@@ -6,7 +6,6 @@ from pathlib import Path
 from sacrebleu.tokenizers.tokenizer_intl import TokenizerV14International
 from sacrebleu.tokenizers.tokenizer_ja_mecab import TokenizerJaMecab
 from sacrebleu.tokenizers.tokenizer_ko_mecab import TokenizerKoMecab
-from sacrebleu.tokenizers.tokenizer_spm import Flores200Tokenizer
 from sacrebleu.tokenizers.tokenizer_zh import TokenizerZh
 
 WORD_RE = re.compile(r"[^\W_]+(?:[’'\-][^\W_]+)*", re.UNICODE)
@@ -17,19 +16,17 @@ SPLITTER_MAPPING = {
     "japanese": TokenizerJaMecab(),
     "korean": TokenizerKoMecab(),
     "default": TokenizerV14International(),
-    "flores-spm": Flores200Tokenizer(),
 }
 
 
-# copied from sacrebleu.tokenizers.tokenizer_ter.py
 def _remove_asian_punct(sent: str) -> str:
-    sent = re.sub(ASIAN_PUNCT, r" \1 ", sent)
-    sent = re.sub(FULL_WIDTH_PUNCT, r" \1 ", sent)
+    sent = re.sub(ASIAN_PUNCT, " ", sent)
+    sent = re.sub(FULL_WIDTH_PUNCT, " ", sent)
     return sent
 
 
 def _remove_punct(sent: str) -> str:
-    return re.sub(r"[\.,\?:;!\"\(\)]", "", sent)
+    return " ".join(WORD_RE.findall(sent))
 
 
 @lru_cache(maxsize=1)
@@ -57,12 +54,10 @@ def tokenize_text(text: str, *, lowercase: bool = True, apply_splitter: str = "d
     sentences = []
     tokenizer = SPLITTER_MAPPING[apply_splitter]
     for segment in segment_text(text):
-        if apply_splitter == "flores-spm":
-            segment = tokenizer(line=segment)
-        else:
-            segment = tokenizer(segment)
+        segment = tokenizer(segment)
         if apply_splitter in {"chinese", "japanese", "korean"}:
             segment = _remove_asian_punct(segment)
+            segment = _remove_punct(segment)
         elif apply_splitter == "default":
             segment = _remove_punct(segment)
         words = segment.split()
@@ -75,12 +70,10 @@ def tokenize_text(text: str, *, lowercase: bool = True, apply_splitter: str = "d
 
 def tokenize_sentence(sentence: str, *, lowercase: bool = True, apply_splitter: str = "default") -> list[str]:
     tokenizer = SPLITTER_MAPPING[apply_splitter]
-    if apply_splitter == "flores-spm":
-        sentence = tokenizer(line=sentence)
-    else:
-        sentence = tokenizer(sentence)
+    sentence = tokenizer(sentence)
     if apply_splitter in {"chinese", "japanese", "korean"}:
         sentence = _remove_asian_punct(sentence)
+        sentence = _remove_punct(sentence)
     elif apply_splitter == "default":
         sentence = _remove_punct(sentence)
     words = sentence.split()
