@@ -113,7 +113,6 @@ def paper_command(args) -> None:
     output = Path(args.output_dir) if args.output_dir else root / "paper"
     generate_paper_artifacts(
         str(root / "all-1000" / "results.csv"),
-        str(root / "futrell-1000" / "results.csv"),
         str(root / "sentence-sizes" / "results.csv"),
         args.bakker,
         str(output),

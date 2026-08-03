@@ -26,7 +26,7 @@ from word_order_flexibility.disjoint import (
     valid_disjoint_result,
 )
 from word_order_flexibility.flexibility import flexibility_profile
-from word_order_flexibility.languages import FUTRELL_LANGUAGES, LANGUAGES, UD_MAPPING
+from word_order_flexibility.languages import LANGUAGES, UD_MAPPING
 from word_order_flexibility.ud import (
     calculate_ud_metrics,
     count_single_root_sentences,
@@ -395,22 +395,11 @@ def build_plan(args) -> Plan:
     parallel_branches = []
     if not args.corpora_only:
         broad = available_languages(args.ud_path, list(LANGUAGES.items()), 1000)
-        futrell = available_languages(args.ud_path, FUTRELL_LANGUAGES, 1000)
         common_sizes = available_languages(args.ud_path, list(LANGUAGES.items()), max(SENTENCE_SIZES))
         for suffix, lowercase in (("", True), ("-cased", False)):
             all_branch, _all_results = experiment_branch(
                 f"all-1000{suffix}",
                 broad,
-                (1000,),
-                args.ud_path,
-                args.output_dir,
-                metric_resources,
-                small_resources,
-                lowercase=lowercase,
-            )
-            futrell_branch, _futrell_results = experiment_branch(
-                f"futrell-1000{suffix}",
-                futrell,
                 (1000,),
                 args.ud_path,
                 args.output_dir,
@@ -428,7 +417,7 @@ def build_plan(args) -> Plan:
                 small_resources,
                 lowercase=lowercase,
             )
-            parallel_branches.extend((all_branch, futrell_branch, size_branch))
+            parallel_branches.extend((all_branch, size_branch))
     corpus_settings = (
         ("bible", args.bible_dir, "tokenized", 1, metric_resources),
         ("wikipedia", args.wikipedia_dir, "text", args.wikipedia_min_words, wikipedia_resources),

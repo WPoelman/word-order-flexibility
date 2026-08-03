@@ -1,120 +1,27 @@
 # Word-order flexibility
 
-Measure word-order flexibility from raw text.
-The package also implements Head Direction Entropy (HDE) and Relation Order Entropy (ROE) for validation on Universal Dependencies (UD).
+Measure word-order flexibility from raw text and validate it against Head
+Direction Entropy (HDE), Relation Order Entropy (ROE), and Bakker flexibility
+ratings.
 
-## Install
+## 1. Install
 
 Requires Python 3.11+ and [`uv`](https://docs.astral.sh/uv/).
 
 ```bash
-uv sync
+uv sync --group cluster
 ```
 
-## Raw text
+## 2. Prepare the data
 
-```bash
-uv run word-flexibility text corpus.txt
-```
-
-Raw `text` input is segmented with WTPSplit's multilingual `sat-3l-sm`
-sentence model, which is downloaded on first use. The `lines` and `tokenized`
-formats continue to treat each non-empty line as one sentence.
-
-The default is $F(0.5)$ with lowercasing, punctuation removal, and a minimum of
-three observations per unordered pair. Input formats are ordinary `text`, one
-untokenized sentence per `lines`, or one whitespace-tokenized sentence per
-`tokenized`:
-
-```bash
-uv run word-flexibility text corpus.tok --format tokenized
-```
-
-Calculate several decay values or include pair-level results:
-
-```bash
-uv run word-flexibility text corpus.txt \
-  --lambda 0.25 --lambda 0.5 --lambda 0.75 --lambda 1.0 \
-  --output profile.json
-
-uv run word-flexibility text corpus.txt --lambda 0.5 --pairs
-```
-
-## UD metrics
-
-Download UD 2.17:
+Download Universal Dependencies 2.17:
 
 ```bash
 uv run python download_ud.py --target ud
 ```
 
-Calculate HDE, ROE, $F(0.5)$, TTR, and pair coverage from the same sentences:
-
-```bash
-uv run word-flexibility ud ud/ud-treebanks-v2.17/UD_English-EWT --sentences 1000
-```
-
-The implementation excludes punctuation tokens, `punct` dependencies, and
-dependencies headed by punctuation. Both frequency-weighted and unweighted UD
-aggregations are returned.
-Flexibility and TTR use case-folded integer-ID UD words; multiword-token range rows and
-empty nodes are not counted as additional observations.
-
-## Analysis
-
-Given a CSV with `language`, `flexibility`, `ttr`,
-`head_direction_entropy_weighted`, and
-`relation_order_entropy_weighted`:
-
-```bash
-uv run word-flexibility analyze language_metrics.csv --output-dir analysis
-```
-
-This writes raw and TTR-controlled Pearson and Spearman correlations and
-validation plots. A `lambda` column with multiple rows per language also
-produces a decay-profile plot.
-
-## Paper experiments
-
-Install the cluster dependencies and inspect the [planit](https://github.com/WPoelman/planit) graph:
-
-Raw Wikipedia processing also requires the WTPSplit model. Cache it once in the
-shared environment before submission:
-
-```bash
-uv run python -c "from word_order_flexibility.text import segment_text; print(segment_text('One. Two.'))"
-```
-
-```bash
-uv sync --group cluster
-
-uv run --group cluster python experiment.py \
-  --ud-path ud/ud-treebanks-v2.17 \
-  --output-dir results
-```
-
-Submit after setting the Slurm options:
-
-```bash
-uv run --group cluster python experiment.py \
-  --ud-path ud/ud-treebanks-v2.17 \
-  --output-dir results \
-  --partition batch \
-  --cluster wice \
-  --account YOUR_ACCOUNT \
-  --email YOUR_EMAIL \
-  --submit
-```
-
-The plan runs case-folded and case-sensitive versions of the broad and Futrell
-1,000-sentence samples and the fixed-sample 1,000/2,000/5,000/10,000-sentence
-study. The existing `all-1000`, `futrell-1000`, and `sentence-sizes` directories
-contain the case-folded paper results; their `-cased` counterparts provide the
-casing sensitivity analysis. Cluster jobs stop after writing the combined CSV
-files; they do not require TeX or generate plots.
-
-Download a fresh 5,000-document Wikipedia sample. Use a new output directory so
-older script-duplicate files are not reused:
+Prepare Wikipedia text files named with language and script codes, such as
+`eng_Latn.txt`:
 
 ```bash
 uv run python process_wikipedia.py \
@@ -123,19 +30,38 @@ uv run python process_wikipedia.py \
   --seed 0
 ```
 
-Bible and Wikipedia inputs can be included as parallel branches:
+Wikipedia is segmented with the multilingual WTPSplit `sat-3l-sm` model. Cache
+the model in the shared cluster environment before submitting jobs:
+
+```bash
+uv run python -c 'from word_order_flexibility.text import segment_text; print(segment_text("One. Two."))'
+```
+
+The Bible directory must contain whitespace-tokenized, one-sentence-per-line
+files using the same `language_script.txt` naming convention.
+
+## 3. Inspect and submit the main experiment
+
+The main plan runs:
+
+- broad UD validation and its Futrell language subset at 1,000 sentences;
+- a fixed-language UD study at 1,000, 2,000, 5,000, and 10,000 sentences;
+- both case-folded and case-sensitive versions of all UD experiments.
+
+Inspect the plan without submitting:
 
 ```bash
 uv run --group cluster python experiment.py \
-  --corpora-only \
-  --bible-dir data/taxi-1500-pre-train \
-  --wikipedia-dir data/wikipedia-5000 \
-  --wikipedia-min-words 5 \
-  --wikipedia-cpus 8 \
-  --corpus-sentences 1000 \
-  --corpus-samples 10 \
-  --corpus-sample-sentences 1000 \
-  --output-dir results \
+  --ud-path ud/ud-treebanks-v2.17 \
+  --output-dir results-full
+```
+
+Submit it:
+
+```bash
+uv run --group cluster python experiment.py \
+  --ud-path ud/ud-treebanks-v2.17 \
+  --output-dir results-full \
   --partition batch \
   --cluster wice \
   --account YOUR_ACCOUNT \
@@ -143,39 +69,24 @@ uv run --group cluster python experiment.py \
   --submit
 ```
 
-Wikipedia fragments shorter than five tokenized words are removed after sentence
-segmentation. Languages with fewer than the requested number of remaining
-sentences are excluded without failing the experiment and retained as excluded
-rows in the corresponding `results.csv`. Each language is segmented once; the same in-memory sentences
-are used for the
-deterministic prefix and ten seeded random samples without replacement. The
-cluster jobs stop after writing
-`results.csv` and `samples.csv` for each corpus. Collector dependencies are reduced
-in batches of 50. Resubmission reuses valid per-language JSON outputs and schedules
-only missing language calculations.
+The case-folded paper results are written to `all-1000` and `sentence-sizes`.
+The case-sensitive results use the corresponding `-cased` directories. The
+Futrell comparison is derived from the matching languages in `all-1000`. Use a
+new output directory for each definitive run.
 
-After copying the completed `results` directory to a machine with TeX, generate
-the corpus analysis locally:
+## 4. Submit the disjoint domain study
 
-```bash
-uv run word-flexibility corpus-analysis results
-```
-
-This writes correlations, overlap tables, reliability tables, and corpus plots to
-`results/corpus-analysis`.
-
-### Disjoint cross-domain study
-
-Run five disjoint 1,000-sentence samples for the matched 20-language UD, Bible, and Wikipedia set:
+This plan draws five disjoint 1,000-sentence samples for the fixed 20-language
+intersection of UD, Bible, and Wikipedia:
 
 ```bash
 uv run --group cluster python experiment.py \
-  --ud-path /path/to/ud-treebanks-v2.17 \
-  --bible-dir /path/to/bible \
-  --wikipedia-dir /path/to/wikipedia \
+  --ud-path ud/ud-treebanks-v2.17 \
+  --bible-dir data/bible \
+  --wikipedia-dir data/wikipedia-5000 \
   --wikipedia-min-words 5 \
   --wikipedia-cpus 8 \
-  --output-dir results \
+  --output-dir results-full \
   --disjoint-domain-study \
   --partition batch \
   --cluster wice \
@@ -184,63 +95,49 @@ uv run --group cluster python experiment.py \
   --submit
 ```
 
-Generate the compact plots locally after copying the results, then generate the
-paper artifacts. This order ensures the appendix language-set table includes both
-corpus studies:
+## 5. Generate tables and figures
+
+Copy `results-full` to a machine with LaTeX, then run the analyses in this
+order:
 
 ```bash
-uv run word-flexibility disjoint-domain-analysis results/disjoint-domain-study
-uv run word-flexibility paper results
+uv run word-flexibility disjoint-domain-analysis results-full/disjoint-domain-study
+uv run word-flexibility paper results-full
 ```
 
-## Tests
+The outputs are written to `results-full/disjoint-domain-study/analysis` and
+`results-full/paper`.
+
+## 6. Calculate the metric on raw text
 
 ```bash
-uv run pytest
+uv run word-flexibility text corpus.txt --lambda 0.5
+```
+
+Raw text is sentence-segmented with WTPSplit, tokenized, stripped of
+punctuation, and case-folded. Use `--format lines` for one untokenized sentence
+per line or `--format tokenized` for whitespace-tokenized sentences.
+
+## 7. Verify the installation
+
+```bash
 uv run ruff check .
+uv run pytest
 ```
 
-## Metric
-
-For word type $a$ preceding $b$ at distance $d$, its directional count receives
-weight $\lambda^d$. For an unordered pair,
-
-```text
-F_lambda(a,b) = 1 - |c_lambda(a,b) - c_lambda(b,a)|
-                     / (c_lambda(a,b) + c_lambda(b,a)).
-```
-
-The corpus score is the arithmetic mean over pairs with at least three
-undecayed observations. It ranges from 0 (one observed order) to 1 (balanced
-orders). Setting $\lambda=1$ removes distance decay.
-
-## Data and references
-
-The included `data/bakker-flexibility-metrics.csv` contains the language-level
-Flexibility, Consistency, and Consequence ratings used for the Bakker
-comparison. These values are from:
+## References
 
 - Dik Bakker (1998), [*Flexibility and consistency in word order patterns in
   the languages of Europe*](https://doi.org/10.1515/9783110812206.383).
-
-The implementation and experiments additionally build on:
-
 - Richard Futrell, Kyle Mahowald, and Edward Gibson (2015), [*Quantifying Word
-  Order Freedom in Dependency Corpora*](https://aclanthology.org/W15-2112/),
-  for HDE and ROE;
+  Order Freedom in Dependency Corpora*](https://aclanthology.org/W15-2112/).
 - Anne Chao and Tsung-Jen Shen (2003), [*Nonparametric estimation of Shannon's
   index of diversity when there are unseen species in
-  sample*](https://doi.org/10.1023/A:1026096204727), for the entropy estimator;
+  sample*](https://doi.org/10.1023/A:1026096204727).
 - Aryaman Arora, Clara Meister, and Ryan Cotterell (2022), [*Estimating the
   Entropy of Linguistic
-  Distributions*](https://aclanthology.org/2022.acl-short.20/), for the
-  evaluation of entropy estimators on sparse linguistic data; and
-- [Universal Dependencies 2.17](http://hdl.handle.net/11234/1-6036), which is
-  downloaded separately and retains the licenses of its constituent
-  treebanks.
-
-Please cite the relevant original sources when using their metrics, estimator,
-ratings, or data.
+  Distributions*](https://aclanthology.org/2022.acl-short.20/).
+- [Universal Dependencies 2.17](http://hdl.handle.net/11234/1-6036).
 
 ## License
 

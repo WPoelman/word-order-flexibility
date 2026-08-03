@@ -1,39 +1,12 @@
-# Original Futrell languages (Bengali dropped: only 56 sentences in UD 2.17)
-FUTRELL_LANGUAGES = [
-    ("Ancient Greek", "UD_Ancient_Greek-Perseus"),
-    ("Arabic", "UD_Arabic-PADT"),
-    ("Basque", "UD_Basque-BDT"),
-    ("Bulgarian", "UD_Bulgarian-BTB"),
-    ("Catalan", "UD_Catalan-AnCora"),
-    ("Croatian", "UD_Croatian-SET"),
-    ("Czech", "UD_Czech-CLTT"),
-    ("Danish", "UD_Danish-DDT"),
-    ("Dutch", "UD_Dutch-LassySmall"),
-    ("English", "UD_English-EWT"),
-    ("Estonian", "UD_Estonian-EWT"),
-    ("Finnish", "UD_Finnish-FTB"),
-    ("French", "UD_French-ALTS"),
-    ("German", "UD_German-GSD"),
-    ("Hebrew", "UD_Hebrew-HTB"),
-    ("Hindi", "UD_Hindi-HDTB"),
-    ("Hungarian", "UD_Hungarian-Szeged"),
-    ("Irish", "UD_Irish-IDT"),
-    ("Italian", "UD_Italian-ISDT"),
-    ("Japanese", "UD_Japanese-GSD"),
-    ("Latin", "UD_Latin-CIRCSE"),
-    ("Modern Greek", "UD_Greek-GDT"),
-    ("Persian", "UD_Persian-PerDT"),
-    ("Portuguese", "UD_Portuguese-CINTIL"),
-    ("Romanian", "UD_Romanian-RRT"),
-    ("Russian", "UD_Russian-GSD"),
-    ("Slovak", "UD_Slovak-SNK"),
-    ("Slovenian", "UD_Slovenian-SST"),
-    ("Spanish", "UD_Spanish-GSD"),
-    ("Swedish", "UD_Swedish-LinES"),
-    ("Tamil", ["UD_Tamil-TTB", "UD_Tamil-MWTT"]),
-    ("Telugu", "UD_Telugu-MTG"),
-    ("Turkish", "UD_Turkish-IMST"),
-]
+# Futrell et al. languages available in the broad UD sample. Bengali is
+# omitted because UD 2.17 has fewer than 1,000 configured sentences.
+FUTRELL_LANGUAGE_NAMES = (
+    "Ancient Greek", "Arabic", "Basque", "Bulgarian", "Catalan", "Croatian",
+    "Czech", "Danish", "Dutch", "English", "Estonian", "Finnish", "French",
+    "German", "Hebrew", "Hindi", "Hungarian", "Irish", "Italian", "Japanese",
+    "Latin", "Modern Greek", "Persian", "Portuguese", "Romanian", "Russian",
+    "Slovak", "Slovenian", "Spanish", "Swedish", "Tamil", "Telugu", "Turkish",
+)
 
 # Languages with >= 1000 sentences (combining all treebanks)
 # Some historic languages or treebanks with issues are commented out

@@ -10,6 +10,7 @@ import seaborn as sns
 from scipy import stats
 
 from .analysis import residualize
+from .languages import FUTRELL_LANGUAGE_NAMES
 from .plot_utils import apply_paper_style, figure_size, format_decimal
 
 GREEN = "#1B7837"
@@ -176,12 +177,12 @@ def _validation_panel(ax, all_results: pd.DataFrame, futrell_results: pd.DataFra
         alpha=0.78,
         edgecolor="white",
         linewidth=0.45,
-        label=rf"Futrell treebanks ($n={len(selected)}$)",
+        label=rf"Futrell subset ($n={len(selected)}$)",
         zorder=2,
     )
     for subset, color, label in (
         (data, GREEN, rf"All UD fit ($n={len(data)}$)"),
-        (selected, RED, rf"Futrell fit ($n={len(selected)}$)"),
+        (selected, RED, rf"Futrell subset fit ($n={len(selected)}$)"),
     ):
         slope, intercept = np.polyfit(subset["x"], subset["y"], 1)
         grid = np.linspace(subset["x"].min(), subset["x"].max(), 100)
@@ -202,7 +203,7 @@ def _validation_panel(ax, all_results: pd.DataFrame, futrell_results: pd.DataFra
         0.96,
         0.05,
         f"All UD: $r={all_r.statistic:.3f}$, {_format_p(all_r.pvalue)}\n"
-        f"Futrell: $r={futrell_r.statistic:.3f}$, {_format_p(futrell_r.pvalue)}",
+        f"Futrell subset: $r={futrell_r.statistic:.3f}$, {_format_p(futrell_r.pvalue)}",
         transform=ax.transAxes,
         ha="right",
         va="bottom",
@@ -303,6 +304,8 @@ def lambda_analysis(results: pd.DataFrame, output: Path) -> pd.DataFrame:
     ax.margins(x=0.08, y=0.12)
     ax.set_xlabel(r"Distance decay $\lambda$", fontsize=AXIS_LABEL_SIZE)
     ax.set_ylabel(r"Pearson / partial $r$", fontsize=AXIS_LABEL_SIZE)
+    ax.set_ylim(-0.1, 0.58)
+    ax.set_yticks(np.arange(-0.1, 0.51, 0.1))
     ax.set_xticks(DECAYS)
     ax.set_xticklabels([rf"${format_decimal(decay)}$" for decay in DECAYS])
     ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
@@ -413,7 +416,7 @@ def bakker_figures(results: pd.DataFrame, bakker: pd.DataFrame, output: Path) ->
     pd.DataFrame(tests).to_csv(output / "bakker_metric_correlations.csv", index=False)
 
     fig = plt.figure(figsize=figure_size(1, height_ratio=1.08))
-    grid = fig.add_gridspec(2, 1, height_ratios=(18, 1), hspace=0.48)
+    grid = fig.add_gridspec(2, 1, height_ratios=(18, 1), hspace=0.28)
     ax = fig.add_subplot(grid[0])
     colorbar_axis = fig.add_subplot(grid[1])
     mask = np.triu(np.ones_like(matrix, dtype=bool), 1)
@@ -483,7 +486,7 @@ def bakker_figures(results: pd.DataFrame, bakker: pd.DataFrame, output: Path) ->
     colorbar = ax.collections[0].colorbar
     colorbar.ax.tick_params(labelsize=TICK_LABEL_SIZE, length=2.5, width=0.5)
     colorbar.set_label(r"Pearson $r$", fontsize=ANNOTATION_SIZE, fontweight="normal")
-    plt.setp(ax.get_xticklabels(), rotation=90, ha="center")
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
     plt.setp(ax.get_yticklabels(), rotation=0, va="center")
     fig.canvas.draw()
     fig.subplots_adjust(left=0.24, right=0.95, top=0.98, bottom=0.10)
@@ -579,6 +582,8 @@ def sentence_size_figures(results: pd.DataFrame, output: Path) -> None:
     ax.axhline(0, color="black", linewidth=1, alpha=0.5)
     _format_sentence_axis(ax)
     ax.set_ylabel(r"Pearson / partial $r$", fontsize=AXIS_LABEL_SIZE)
+    ax.set_ylim(-0.1, 0.58)
+    ax.set_yticks(np.arange(-0.1, 0.51, 0.1))
     ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
     ax.grid(True, alpha=0.3)
     legend = ax.legend(
@@ -666,6 +671,8 @@ def sentence_size_figures(results: pd.DataFrame, output: Path) -> None:
     ax.set_xticklabels([rf"${format_decimal(decay)}$" for decay in DECAYS])
     ax.set_xlabel(r"Distance decay $\lambda$", fontsize=AXIS_LABEL_SIZE)
     ax.set_ylabel(r"Partial $r$", fontsize=AXIS_LABEL_SIZE)
+    ax.set_ylim(-0.1, 0.58)
+    ax.set_yticks(np.arange(-0.1, 0.51, 0.1))
     ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
     ax.grid(True, alpha=0.3)
     target_handles = [
@@ -980,7 +987,6 @@ def appendix_table(results: pd.DataFrame, bakker: pd.DataFrame, output: Path) ->
 
 def generate_paper_artifacts(
     all_csv: str,
-    futrell_csv: str,
     sizes_csv: str,
     bakker_csv: str,
     output_dir: str,
@@ -991,7 +997,10 @@ def generate_paper_artifacts(
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
     all_results = pd.read_csv(all_csv)
-    futrell = pd.read_csv(futrell_csv)
+    futrell = all_results[all_results.Language.isin(FUTRELL_LANGUAGE_NAMES)].copy()
+    if set(futrell.Language) != set(FUTRELL_LANGUAGE_NAMES):
+        missing = sorted(set(FUTRELL_LANGUAGE_NAMES) - set(futrell.Language))
+        raise ValueError(f"Broad UD results are missing Futrell languages: {missing}")
     sizes = pd.read_csv(sizes_csv)
     bakker = pd.read_csv(bakker_csv)
     common_corpus_codes = None

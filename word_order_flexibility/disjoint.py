@@ -183,10 +183,12 @@ def analyze_disjoint_study(results_dir: str | Path, output_dir: str | Path | Non
             raise ValueError(f"{name}: duplicate or missing sample rows")
         if set(frames[name]["sample"]) != set(range(SAMPLE_COUNT)):
             raise ValueError(f"{name}: expected sample labels 0 through {SAMPLE_COUNT - 1}")
-        if not frames[name]["sentences"].eq(SAMPLE_SENTENCES).all():
+        if name != "ud" and not frames[name]["sentences"].eq(SAMPLE_SENTENCES).all():
             raise ValueError(f"{name}: every sample must contain {SAMPLE_SENTENCES} sentences")
     if not frames["ud"]["accepted_ud_sentences"].eq(SAMPLE_SENTENCES).all():
         raise ValueError("UD metrics did not accept every sampled single-root sentence")
+    if not frames["ud"]["sentences"].between(1, SAMPLE_SENTENCES).all():
+        raise ValueError("UD surface-sentence counts are invalid after punctuation removal")
     pd.DataFrame({"code": common}).to_csv(output / "languages.csv", index=False)
     pools = pd.DataFrame({"code": common})
     for name, frame in frames.items():
@@ -231,7 +233,7 @@ def analyze_disjoint_study(results_dir: str | Path, output_dir: str | Path | Non
     pd.DataFrame(tests).to_csv(output / "cross_domain_correlations.csv", index=False)
 
     _set_style()
-    figure, axis = plt.subplots(figsize=figure_size(1, height_ratio=0.42))
+    figure, axis = plt.subplots(figsize=figure_size(1, height_ratio=0.34))
     rng = np.random.default_rng(0)
     for position, (label, group) in enumerate(reliability_frame.groupby("measure", sort=False)):
         values = group["spearman_rho"].to_numpy()
@@ -246,13 +248,10 @@ def analyze_disjoint_study(results_dir: str | Path, output_dir: str | Path | Non
         axis.hlines(np.median(values), position - 0.20, position + 0.20, color=GREEN, linewidth=1.7)
     axis.set_xticks(range(len(reliability_specs)), [spec[0] for spec in reliability_specs], rotation=30, ha="right")
     axis.set_ylabel(r"Spearman $\rho$")
-    minimum = reliability_frame["spearman_rho"].min()
-    lower = 0.5 if minimum >= 0.5 else -1.0
-    axis.set_ylim(lower, 1.02)
-    if lower < 0:
-        axis.axhline(0, color=SLATE, linewidth=0.6, alpha=0.55)
+    axis.set_ylim(0.7, 1.01)
+    axis.set_yticks([0.7, 0.8, 0.9, 1.0])
     axis.grid(axis="x", visible=False)
-    figure.subplots_adjust(left=0.18, right=0.98, bottom=0.28, top=0.98)
+    figure.subplots_adjust(left=0.18, right=0.98, bottom=0.34, top=0.97)
     _save(figure, output / "disjoint_sample_reliability")
 
     figure, axis = plt.subplots(figsize=figure_size(1, height_ratio=0.55))
