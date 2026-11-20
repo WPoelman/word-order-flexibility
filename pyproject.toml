@@ -10,6 +10,8 @@ requires-python = ">=3.11"
 dependencies = [
   "conllu>=6.0",
   "datasets>=5.0.0",
+  "dit",
+  "ipykernel>=7.3.0",
   "matplotlib>=3.8",
   "numpy>=1.26",
   "pandas>=2.2",
@@ -41,6 +43,9 @@ line-length = 120
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.uv.sources]
+dit = { git = "https://github.com/dit/dit.git", rev = "42bdafabb94402eb2be00ff2f531e0f930cc0ed7" }
 
 [dependency-groups]
 dev = [

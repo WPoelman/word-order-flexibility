@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from matplotlib.patches import Rectangle
 from scipy import stats
 
 from .analysis import residualize
@@ -102,7 +103,48 @@ FUTRELL_ROE_ORDER = (
 
 def _set_style() -> None:
     sns.set_theme(style="whitegrid")
-    apply_paper_style()
+    plt.rcParams.update(
+        {
+            "font.family": "serif",
+            "font.serif": ["Times New Roman", "DejaVu Serif", "Liberation Serif"],
+            "font.size": 14,
+            "mathtext.fontset": "cm",
+            "axes.labelsize": AXIS_LABEL_SIZE,
+            "axes.titlesize": 18,
+            "axes.labelweight": "normal",
+            "xtick.labelsize": TICK_LABEL_SIZE,
+            "ytick.labelsize": TICK_LABEL_SIZE,
+            "legend.fontsize": LEGEND_SIZE,
+            "figure.titlesize": 20,
+            "legend.framealpha": 1.0,
+            "text.usetex": True,
+            "text.latex.preamble": r"\usepackage{newtxtext}",
+        }
+    )
+
+
+def _blank_correlation_diagonal(ax, size: int) -> None:
+    """Show neutral self-correlation cells without redundant numerical values."""
+    for index in range(size):
+        ax.add_patch(
+            Rectangle(
+                (index, index),
+                1,
+                1,
+                facecolor=LIGHT_GRAY,
+                edgecolor="white",
+                linewidth=0.7,
+            )
+        )
+        ax.text(
+            index + 0.5,
+            index + 0.5,
+            "—",
+            ha="center",
+            va="center",
+            fontsize=18,
+            color="black",
+        )
 
 
 def _save(fig, path: Path) -> None:
@@ -151,42 +193,59 @@ def _regression(ax, x, y, color, label) -> None:
     ax.plot(grid, slope * grid + intercept, color=color, linewidth=1.0, label=label)
 
 
-def _validation_panel(ax, all_results: pd.DataFrame, futrell_results: pd.DataFrame, target: str) -> None:
-    data = all_results[["Language", FLEX, target, TTR]].dropna().copy()
+def _validation_panel(
+    ax,
+    all_results: pd.DataFrame,
+    futrell_results: pd.DataFrame,
+    target: str,
+    *,
+    metric: str = FLEX,
+    metric_label: str = r"$F^{(.5)}$",
+) -> None:
+    data = all_results[["Language", metric, target, TTR]].dropna().copy()
     data["x"] = residualize(data[target], data[TTR])
-    data["y"] = residualize(data[FLEX], data[TTR])
-    selected = futrell_results[["Language", FLEX, target, TTR]].dropna().copy()
+    data["y"] = residualize(data[metric], data[TTR])
+    futrell_languages = set(futrell_results["Language"])
+    selected = (
+        all_results[all_results["Language"].isin(futrell_languages)][
+            ["Language", metric, target, TTR]
+        ]
+        .dropna()
+        .copy()
+    )
     selected["x"] = residualize(selected[target], selected[TTR])
-    selected["y"] = residualize(selected[FLEX], selected[TTR])
+    selected["y"] = residualize(selected[metric], selected[TTR])
+    other = data[~data["Language"].isin(futrell_languages)]
+
     ax.scatter(
-        data["x"],
-        data["y"],
-        s=14,
+        other["x"],
+        other["y"],
+        s=58,
         color=MID_GRAY,
         alpha=0.42,
         edgecolor="white",
         linewidth=0.35,
-        label=rf"All UD ($n={len(data)}$)",
+        label=rf"Other UD languages ($n={len(other)}$)",
         zorder=1,
     )
     ax.scatter(
         selected["x"],
         selected["y"],
-        s=18,
+        s=72,
         color=RED,
         alpha=0.78,
         edgecolor="white",
         linewidth=0.45,
-        label=rf"Futrell subset ($n={len(selected)}$)",
+        label=rf"Futrell languages ($n={len(selected)}$)",
         zorder=2,
     )
     for subset, color, label in (
         (data, GREEN, rf"All UD fit ($n={len(data)}$)"),
-        (selected, RED, rf"Futrell subset fit ($n={len(selected)}$)"),
+        (selected, RED, rf"Futrell fit ($n={len(selected)}$)"),
     ):
         slope, intercept = np.polyfit(subset["x"], subset["y"], 1)
         grid = np.linspace(subset["x"].min(), subset["x"].max(), 100)
-        linewidth = 1.4 if label.startswith("All UD") else 2.0
+        linewidth = 3.4 if label.startswith("All UD") else 2.0
         zorder = 3 if label.startswith("All UD") else 4
         ax.plot(
             grid,
@@ -203,10 +262,11 @@ def _validation_panel(ax, all_results: pd.DataFrame, futrell_results: pd.DataFra
         0.96,
         0.05,
         f"All UD: $r={all_r.statistic:.3f}$, {_format_p(all_r.pvalue)}\n"
-        f"Futrell subset: $r={futrell_r.statistic:.3f}$, {_format_p(futrell_r.pvalue)}",
+        f"Futrell: $r={futrell_r.statistic:.3f}$, {_format_p(futrell_r.pvalue)}",
         transform=ax.transAxes,
         ha="right",
         va="bottom",
+        zorder=10,
         multialignment="left",
         fontsize=ANNOTATION_SIZE,
         linespacing=1.25,
@@ -217,19 +277,36 @@ def _validation_panel(ax, all_results: pd.DataFrame, futrell_results: pd.DataFra
             "alpha": 0.94,
         },
     )
-    ax.set_xlabel(rf"$\mathrm{{{target}}} \mid \mathrm{{TTR}}$ (resid.)", fontsize=AXIS_LABEL_SIZE)
-    ax.set_ylabel(r"$F^{(.5)} \mid \mathrm{TTR}$ (resid.)", fontsize=AXIS_LABEL_SIZE)
+    ax.set_xlabel(
+        rf"$\mathrm{{{target}}} \mid \mathrm{{TTR}}$ (resid.)", fontsize=AXIS_LABEL_SIZE
+    )
+    ax.set_ylabel(metric_label + " | TTR (resid.)", fontsize=AXIS_LABEL_SIZE)
     ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
     ax.grid(True, alpha=0.3)
 
 
-def plot_validation(all_results: pd.DataFrame, futrell_results: pd.DataFrame, output: Path) -> None:
+def plot_validation(
+    all_results: pd.DataFrame,
+    futrell_results: pd.DataFrame,
+    output: Path,
+    *,
+    metric: str = FLEX,
+    metric_label: str = r"$F^{(.5)}$",
+    prefix: str = "word_futrell_validation_decay",
+) -> None:
     for target in ("HDE", "ROE"):
-        fig, ax = plt.subplots(figsize=figure_size(1, height_ratio=0.72))
-        _validation_panel(ax, all_results, futrell_results, target)
+        fig, ax = plt.subplots(figsize=(8, 6.8))
+        _validation_panel(
+            ax,
+            all_results,
+            futrell_results,
+            target,
+            metric=metric,
+            metric_label=metric_label,
+        )
         handles, labels = ax.get_legend_handles_labels()
         order = (0, 2, 1, 3)
-        legend = ax.legend(
+        ax.legend(
             [handles[index] for index in order],
             [labels[index] for index in order],
             loc="lower center",
@@ -238,21 +315,26 @@ def plot_validation(all_results: pd.DataFrame, futrell_results: pd.DataFrame, ou
             borderaxespad=0,
             frameon=True,
             framealpha=1.0,
-            fontsize=LEGEND_SIZE,
+            fontsize=15,
             columnspacing=0.9,
             labelspacing=0.45,
             handlelength=1.6,
             handletextpad=0.45,
             borderpad=0.45,
         )
-        legend.set_in_layout(False)
-        fig.tight_layout()
-        fig.subplots_adjust(top=0.80)
-        _save(fig, output / f"word_futrell_validation_decay_{target.lower()}")
+        fig.tight_layout(rect=(0, 0, 1, 0.84))
+        _save(fig, output / f"{prefix}_{target.lower()}")
 
-    fig, axes = plt.subplots(1, 2, figsize=figure_size(2, height_ratio=0.43), sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6.8), sharey=True)
     for ax, target in zip(axes, ("HDE", "ROE"), strict=True):
-        _validation_panel(ax, all_results, futrell_results, target)
+        _validation_panel(
+            ax,
+            all_results,
+            futrell_results,
+            target,
+            metric=metric,
+            metric_label=metric_label,
+        )
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(
         handles,
@@ -265,7 +347,7 @@ def plot_validation(all_results: pd.DataFrame, futrell_results: pd.DataFrame, ou
         fontsize=LEGEND_SIZE,
     )
     fig.tight_layout(rect=(0, 0, 1, 0.94))
-    _save(fig, output / "word_futrell_validation_decay")
+    _save(fig, output / prefix)
 
 
 def lambda_analysis(results: pd.DataFrame, output: Path) -> pd.DataFrame:
@@ -274,7 +356,12 @@ def lambda_analysis(results: pd.DataFrame, output: Path) -> pd.DataFrame:
         metric = f"F_lambda_{int(decay * 100):03d}"
         for target in ("HDE", "ROE"):
             for controlled in (False, True):
-                rows.append({"lambda": decay, **correlation(results, metric, target, controlled)})
+                rows.append(
+                    {
+                        "lambda": decay,
+                        **correlation(results, metric, target, controlled),
+                    }
+                )
     table = pd.DataFrame(rows)
     table.to_csv(output / "soft_lambda_correlations.csv", index=False)
 
@@ -286,7 +373,9 @@ def lambda_analysis(results: pd.DataFrame, output: Path) -> pd.DataFrame:
         ("ROE", "TTR", GREEN, "D", "-", None, r"$\mathrm{ROE} \mid \mathrm{TTR}$"),
     )
     for target, control, color, marker, linestyle, fill, label in specs:
-        line = table[(table.y == target) & (table.control == control)].sort_values("lambda")
+        line = table[(table.y == target) & (table.control == control)].sort_values(
+            "lambda"
+        )
         ax.plot(
             line["lambda"],
             line.pearson_r,
@@ -327,7 +416,9 @@ def lambda_analysis(results: pd.DataFrame, output: Path) -> pd.DataFrame:
     fig, ax = plt.subplots(figsize=figure_size(1, height_ratio=0.60))
     columns = [f"F_lambda_{int(decay * 100):03d}" for decay in DECAYS]
     for _, row in results.sort_values("Language").iterrows():
-        ax.plot(DECAYS, row[columns], color=MID_GRAY, alpha=0.22, linewidth=0.9, zorder=1)
+        ax.plot(
+            DECAYS, row[columns], color=MID_GRAY, alpha=0.22, linewidth=0.9, zorder=1
+        )
     ax.plot(
         DECAYS,
         results[columns].median(),
@@ -384,16 +475,32 @@ def _stars(value: float) -> str:
     return ""
 
 
-def bakker_figures(results: pd.DataFrame, bakker: pd.DataFrame, output: Path) -> None:
+def bakker_figures(
+    results: pd.DataFrame,
+    bakker: pd.DataFrame,
+    output: Path,
+    *,
+    metric: str = FLEX,
+    metric_label: str = r"Flexibility $F^{(.5)}$",
+    extra_metrics: dict | None = None,
+    prefix: str = "bakker_vs_decay_flexibility",
+    matrix_only: bool = False,
+) -> None:
     bakker = bakker.copy()
     bakker["Language"] = bakker["Language"].replace({"Greek": "Modern Greek"})
-    merged = results.merge(bakker[["Language", "Flexibility"]], on="Language").rename(columns={"Flexibility": "Bakker"})
+    merged = results.merge(bakker[["Language", "Flexibility"]], on="Language").rename(
+        columns={"Flexibility": "Bakker"}
+    )
     metrics = {
         "Bakker": "Bakker",
         "HDE": "HDE",
         "ROE": "ROE",
-        **{rf"$F^{{({format_decimal(decay)})}}$": f"F_lambda_{int(decay * 100):03d}" for decay in DECAYS},
+        **{
+            rf"$F^{{({decay:g})}}$": f"F_lambda_{int(decay * 100):03d}"
+            for decay in DECAYS
+        },
     }
+    metrics.update(extra_metrics or {})
     labels = list(metrics)
     matrix = merged[list(metrics.values())].corr(method="pearson")
     matrix.index = matrix.columns = labels
@@ -415,11 +522,23 @@ def bakker_figures(results: pd.DataFrame, bakker: pd.DataFrame, output: Path) ->
         row["q_bh"] = value
     pd.DataFrame(tests).to_csv(output / "bakker_metric_correlations.csv", index=False)
 
-    fig = plt.figure(figsize=figure_size(1, height_ratio=1.08))
-    grid = fig.add_gridspec(2, 1, height_ratios=(18, 1), hspace=0.28)
-    ax = fig.add_subplot(grid[0])
-    colorbar_axis = fig.add_subplot(grid[1])
-    mask = np.triu(np.ones_like(matrix, dtype=bool), 1)
+    fig, ax = plt.subplots(figsize=(9, 8))
+    mask = np.triu(np.ones_like(matrix, dtype=bool), 0)
+
+    from matplotlib.colors import LinearSegmentedColormap
+
+    base_cmap = plt.get_cmap("PiYG")
+
+    x = np.linspace(0, 1, 256)
+
+    # Symmetric logarithmic progression around 0.5
+    strength = 0.7
+    distance = 2 * np.abs(x - 0.5)
+    warped = np.log1p(strength * distance) / np.log1p(strength)
+
+    positions = 0.5 + np.sign(x - 0.5) * warped / 2
+
+    cmap = LinearSegmentedColormap.from_list("symmetric_log", base_cmap(positions))
     sns.heatmap(
         matrix,
         mask=mask,
@@ -427,80 +546,72 @@ def bakker_figures(results: pd.DataFrame, bakker: pd.DataFrame, output: Path) ->
         vmin=-1,
         vmax=1,
         center=0,
-        cmap=sns.diverging_palette(10, 130, s=65, l=55, as_cmap=True),
-        linewidths=0.35,
+        cmap=cmap,
+        linewidths=0.7,
         linecolor="white",
         square=True,
-        cbar_ax=colorbar_axis,
-        cbar_kws={"orientation": "horizontal"},
+        cbar_kws={
+            "label": r"Pearson $r$",
+            "orientation": "horizontal",
+            "location": "bottom",
+            "shrink": 0.72,
+            "pad": 0.08,
+        },
         ax=ax,
     )
+    _blank_correlation_diagonal(ax, len(labels))
     q_values = {(row["left"], row["right"]): row["q_bh"] for row in tests}
     for row_index, left in enumerate(labels):
         for column_index, right in enumerate(labels):
-            if column_index > row_index:
-                continue
-            if column_index == row_index:
-                ax.add_patch(
-                    plt.Rectangle(
-                        (column_index, row_index), 1, 1, facecolor=LIGHT_GRAY, edgecolor="white", linewidth=0.35
-                    )
-                )
-                ax.text(
-                    column_index + 0.5,
-                    row_index + 0.5,
-                    r"\textemdash",
-                    ha="center",
-                    va="center",
-                    fontsize=ANNOTATION_SIZE,
-                    color=SLATE,
-                )
+            if column_index >= row_index:
                 continue
             value = matrix.loc[left, right]
-            q_value = q_values.get((left, right), q_values.get((right, left), float("nan")))
-            star = "" if pd.isna(q_value) else _stars(q_value)
-            annotation = r"--" if pd.isna(value) else rf"$\mathbf{{{value:.2f}}}$"
             ax.text(
                 column_index + 0.5,
-                row_index + 0.57,
-                annotation,
+                row_index + 0.53,
+                "--" if pd.isna(value) else f"{value:.2f}",
                 ha="center",
                 va="center",
-                fontsize=7,
+                fontsize=18,
+                fontweight="bold",
                 color="#1A1A1A",
             )
+            q_value = q_values.get(
+                (left, right), q_values.get((right, left), float("nan"))
+            )
+            star = "" if pd.isna(q_value) else _stars(q_value)
             if star:
                 ax.text(
-                    column_index + 0.5,
-                    row_index + 0.24,
+                    column_index + 0.78,
+                    row_index + 0.23,
                     star,
-                    ha="center",
-                    va="center",
-                    fontsize=4.5,
+                    ha="right",
+                    va="top",
+                    fontsize=8.5,
+                    fontweight="bold",
                     color="#1A1A1A",
                 )
     ax.set_xlabel("")
     ax.set_ylabel("")
-    ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE, bottom=True, left=True, length=1.5, width=0.5)
+    ax.tick_params(axis="both", labelsize=18)
     ax.grid(False)
     colorbar = ax.collections[0].colorbar
-    colorbar.ax.tick_params(labelsize=TICK_LABEL_SIZE, length=2.5, width=0.5)
-    colorbar.set_label(r"Pearson $r$", fontsize=ANNOTATION_SIZE, fontweight="normal")
-    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
-    plt.setp(ax.get_yticklabels(), rotation=0, va="center")
-    fig.canvas.draw()
-    fig.subplots_adjust(left=0.24, right=0.95, top=0.98, bottom=0.10)
+    colorbar.ax.tick_params(labelsize=15)
+    colorbar.set_label(r"Pearson $r$", fontsize=18, fontweight="normal")
+    fig.tight_layout()
     _save(fig, output / "bakker_metric_correlations")
+    if matrix_only:
+        return
 
-    pearson = stats.pearsonr(merged["Bakker"], merged[FLEX])
-    spearman = stats.spearmanr(merged["Bakker"], merged[FLEX])
-    fig, ax = plt.subplots(figsize=figure_size(1, height_ratio=0.75))
+    pearson = stats.pearsonr(merged["Bakker"], merged[metric])
+    spearman = stats.spearmanr(merged["Bakker"], merged[metric])
+    fig, ax = plt.subplots(figsize=(8, 6))
     sns.regplot(
         data=merged,
         x="Bakker",
-        y=FLEX,
+        y=metric,
         scatter_kws={
-            "s": 16,
+            "s": 60,
             "alpha": 0.75,
             "facecolor": GREEN,
             "edgecolor": "white",
@@ -508,11 +619,12 @@ def bakker_figures(results: pd.DataFrame, bakker: pd.DataFrame, output: Path) ->
         },
         line_kws={"color": RED, "linewidth": 2.2},
         ci=95,
+        seed=0,
         color=RED,
         ax=ax,
     )
     ax.set_xlabel("Bakker flexibility rating", fontsize=AXIS_LABEL_SIZE)
-    ax.set_ylabel(r"Flexibility $F^{(.5)}$", fontsize=AXIS_LABEL_SIZE)
+    ax.set_ylabel(metric_label, fontsize=AXIS_LABEL_SIZE)
     ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
     ax.grid(True, alpha=0.3)
     ax.text(
@@ -523,10 +635,14 @@ def bakker_figures(results: pd.DataFrame, bakker: pd.DataFrame, output: Path) ->
         transform=ax.transAxes,
         ha="left",
         va="top",
-        bbox={"boxstyle": "round,pad=0.35", "facecolor": LIGHT_GRAY, "edgecolor": "0.75"},
+        bbox={
+            "boxstyle": "round,pad=0.35",
+            "facecolor": LIGHT_GRAY,
+            "edgecolor": "0.75",
+        },
     )
     fig.tight_layout()
-    _save(fig, output / "bakker_vs_decay_flexibility")
+    _save(fig, output / prefix)
 
 
 def _format_sentence_axis(ax) -> None:
@@ -542,7 +658,12 @@ def sentence_size_figures(results: pd.DataFrame, output: Path) -> None:
     for size, subset in results.groupby("n_sentences"):
         for target in ("HDE", "ROE"):
             for controlled in (False, True):
-                rows.append({"n_sentences": size, **correlation(subset, FLEX, target, controlled)})
+                rows.append(
+                    {
+                        "n_sentences": size,
+                        **correlation(subset, FLEX, target, controlled),
+                    }
+                )
         for decay in DECAYS:
             metric = f"F_lambda_{int(decay * 100):03d}"
             for target in ("HDE", "ROE"):
@@ -565,7 +686,9 @@ def sentence_size_figures(results: pd.DataFrame, output: Path) -> None:
     )
     base = table[table["lambda"].isna()]
     for target, control, color, marker, linestyle, fill, label in specs:
-        line = base[(base.y == target) & (base.control == control)].sort_values("n_sentences")
+        line = base[(base.y == target) & (base.control == control)].sort_values(
+            "n_sentences"
+        )
         ax.plot(
             line.n_sentences,
             line.pearson_r,
@@ -607,8 +730,12 @@ def sentence_size_figures(results: pd.DataFrame, output: Path) -> None:
         stability.append(
             {
                 "n_sentences": size,
-                "pearson_r": stats.pearsonr(joined[FLEX], joined[FLEX + "_largest"]).statistic,
-                "spearman_rho": stats.spearmanr(joined[FLEX], joined[FLEX + "_largest"]).statistic,
+                "pearson_r": stats.pearsonr(
+                    joined[FLEX], joined[FLEX + "_largest"]
+                ).statistic,
+                "spearman_rho": stats.spearmanr(
+                    joined[FLEX], joined[FLEX + "_largest"]
+                ).statistic,
                 "n_languages": len(joined),
             }
         )
@@ -651,7 +778,9 @@ def sentence_size_figures(results: pd.DataFrame, output: Path) -> None:
             ("HDE", RED, "o", "-", None),
             ("ROE", GREEN, "D", "--", "white"),
         ):
-            line = profile[(profile.n_sentences == size) & (profile.y == target)].sort_values("lambda")
+            line = profile[
+                (profile.n_sentences == size) & (profile.y == target)
+            ].sort_values("lambda")
             ax.plot(
                 line["lambda"],
                 line.pearson_r,
@@ -792,7 +921,9 @@ def futrell_ranks(results: pd.DataFrame, output: Path) -> None:
     for metric, order in (("HDE", FUTRELL_HDE_ORDER), ("ROE", FUTRELL_ROE_ORDER)):
         shared = [language for language in order if language in set(results.Language)]
         subset = results[results.Language.isin(shared)][["Language", metric]].copy()
-        subset["published_rank"] = subset.Language.map({language: index for index, language in enumerate(shared, 1)})
+        subset["published_rank"] = subset.Language.map(
+            {language: index for index, language in enumerate(shared, 1)}
+        )
         subset["current_rank"] = subset[metric].rank(ascending=False, method="average")
         subset["delta"] = subset["current_rank"] - subset["published_rank"]
         subset["metric"] = metric
@@ -832,10 +963,14 @@ def futrell_ranks(results: pd.DataFrame, output: Path) -> None:
             published = wide.loc[language, ("published_rank", metric)]
             current = wide.loc[language, ("current_rank", metric)]
             delta = wide.loc[language, ("delta", metric)]
-            values.extend([f"{published:.0f}", f"{current:.0f}", _rank_delta_cell(delta)])
+            values.extend(
+                [f"{published:.0f}", f"{current:.0f}", _rank_delta_cell(delta)]
+            )
         lines.append(" & ".join([_latex_escape(language), *values]) + row_end)
     lines.extend([r"\bottomrule", r"\end{tabular}", r"\end{table}", ""])
-    (output / "futrell-rank-comparison-table.tex").write_text("\n".join(lines), encoding="utf-8")
+    (output / "futrell-rank-comparison-table.tex").write_text(
+        "\n".join(lines), encoding="utf-8"
+    )
 
 
 def analysis_language_sets(
@@ -862,7 +997,9 @@ def analysis_language_sets(
     markdown = ["# Language sets by analysis", "", "| Analysis | n | Languages |", "| --- | ---: | --- |"]
     for label, languages in sets:
         markdown.append(f"| {label} | {len(languages)} | {', '.join(languages)} |")
-    (output / "analysis-language-sets.md").write_text("\n".join(markdown) + "\n", encoding="utf-8")
+    (output / "analysis-language-sets.md").write_text(
+        "\n".join(markdown) + "\n", encoding="utf-8"
+    )
 
     row_end = " " + "\\" * 2
     lines = [
@@ -879,10 +1016,19 @@ def analysis_language_sets(
     ]
     for label, languages in sets:
         lines.append(
-            " & ".join([_latex_escape(label), str(len(languages)), ", ".join(map(_latex_escape, languages))]) + row_end
+            " & ".join(
+                [
+                    _latex_escape(label),
+                    str(len(languages)),
+                    ", ".join(map(_latex_escape, languages)),
+                ]
+            )
+            + row_end
         )
     lines.extend([r"\bottomrule", r"\end{tabularx}", r"\end{table*}", ""])
-    (output / "analysis-language-sets.tex").write_text("\n".join(lines), encoding="utf-8")
+    (output / "analysis-language-sets.tex").write_text(
+        "\n".join(lines), encoding="utf-8"
+    )
 
 
 def _latex_escape(value: str) -> str:
@@ -915,13 +1061,23 @@ def _gradient_cell(value, mean: float, low: float, high: float, digits: int = 2)
         intensity = round(100 * (mean - value) / (mean - low))
     intensity = max(0, min(60, intensity))
     rendered = f"{value:.{digits}f}"
-    return rendered if intensity == 0 else rf"\cellcolor{{{color}!{intensity}}}{rendered}"
+    return (
+        rendered if intensity == 0 else rf"\cellcolor{{{color}!{intensity}}}{rendered}"
+    )
 
 
-def appendix_table(results: pd.DataFrame, bakker: pd.DataFrame, output: Path) -> None:
+def appendix_table(
+    results: pd.DataFrame,
+    bakker: pd.DataFrame,
+    output: Path,
+    *,
+    extra_metrics: list[tuple[str, str]] | None = None,
+) -> None:
     bakker = bakker.copy()
     bakker["Language"] = bakker["Language"].replace({"Greek": "Modern Greek"})
-    bakker = bakker[["Language", "Flexibility"]].rename(columns={"Flexibility": "Bakker"})
+    bakker = bakker[["Language", "Flexibility"]].rename(
+        columns={"Flexibility": "Bakker"}
+    )
     table = results.merge(bakker, on="Language", how="left").sort_values("Language")
     metrics = [
         ("Bakker", "Bak."),
@@ -933,6 +1089,8 @@ def appendix_table(results: pd.DataFrame, bakker: pd.DataFrame, output: Path) ->
         ("F_lambda_100", r"$F^{(1)}$"),
         (TTR, "TTR"),
     ]
+    metrics.extend(extra_metrics or [])
+    columns = len(metrics) + 2
     statistics = {
         column: (
             table[column].mean(skipna=True),
@@ -952,7 +1110,7 @@ def appendix_table(results: pd.DataFrame, bakker: pd.DataFrame, output: Path) ->
         r"\setlength{\tabcolsep}{3pt}",
         r"\setlength{\LTleft}{\fill}",
         r"\setlength{\LTright}{\fill}",
-        r"\begin{longtable}{@{}lrrrrrrrrr@{}}",
+        r"\begin{longtable}{@{}l" + "r" * (columns - 1) + r"@{}}",
         (
             r"\caption{Language-level metrics. Colors are scaled independently within each "
             r"column around its mean: red indicates lower values and green higher values. "
@@ -969,7 +1127,7 @@ def appendix_table(results: pd.DataFrame, bakker: pd.DataFrame, output: Path) ->
         r"\midrule",
         r"\endhead",
         r"\midrule",
-        r"\multicolumn{10}{r}{\emph{Continued on next page}}\\",
+        rf"\multicolumn{{{columns}}}{{r}}{{\emph{{Continued on next page}}}}\\",
         r"\endfoot",
         r"\bottomrule",
         r"\endlastfoot",
@@ -982,7 +1140,9 @@ def appendix_table(results: pd.DataFrame, bakker: pd.DataFrame, output: Path) ->
         cells.append(f"{int(row.qualifying_pairs_lambda_050):,}")
         lines.append(" & ".join(cells) + row_end)
     lines.extend([r"\end{longtable}", r"\endgroup", ""])
-    (output / "appendix-language-metrics-table.tex").write_text("\n".join(lines), encoding="utf-8")
+    (output / "appendix-language-metrics-table.tex").write_text(
+        "\n".join(lines), encoding="utf-8"
+    )
 
 
 def generate_paper_artifacts(
@@ -1026,7 +1186,9 @@ def generate_paper_artifacts(
     (output / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
 
 
-def validation_plot(rows: list[dict], output: str | Path, *, control_ttr: bool = True) -> None:
+def validation_plot(
+    rows: list[dict], output: str | Path, *, control_ttr: bool = True
+) -> None:
     """Plot flexibility against HDE and ROE for the public CSV interface."""
     _set_style()
     frame = pd.DataFrame(rows)

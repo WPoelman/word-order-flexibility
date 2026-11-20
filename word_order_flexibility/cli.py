@@ -6,6 +6,7 @@ from pathlib import Path
 from .analysis import correlations
 from .corpora import analyze_corpora, analyze_corpus_stability
 from .disjoint import analyze_disjoint_study
+from .entropy import entropy_convergence, sentence_order_entropy
 from .flexibility import flexibility_profile, word_order_flexibility
 from .plotting import generate_paper_artifacts, profile_plot, validation_plot
 from .text import read_sentences
@@ -47,9 +48,39 @@ def _metric_results(sentences, args):
 
 def text_command(args) -> None:
     sentences = read_sentences(
-        args.input, input_format=args.format, lowercase=not args.keep_case, apply_splitter=args.apply_splitter
+        args.input,
+        input_format=args.format,
+        lowercase=not args.keep_case,
+        apply_splitter=args.apply_splitter,
     )
     _write_json(_metric_results(sentences, args), args.output)
+
+
+def entropy_command(args) -> None:
+    if args.format == "conllu":
+        sentences = surface_sentences(load_conllu([args.input], args.sentences, single_root_only=True), lowercase=not args.keep_case)
+    else:
+        sentences = read_sentences(
+            args.input,
+            input_format=args.format,
+            lowercase=not args.keep_case,
+            apply_splitter=args.apply_splitter,
+        )
+        if args.sentences is not None:
+            sentences = sentences[: args.sentences]
+    if args.sentences is not None and args.sentences < 4:
+        raise ValueError("--sentences must be at least 4")
+    if args.convergence:
+        result = entropy_convergence(
+            sentences,
+            repeats=args.repeats,
+            seed=args.seed,
+            sizes=args.sizes,
+            tolerance=args.tolerance,
+        )
+    else:
+        result = sentence_order_entropy(sentences, repeats=args.repeats, seed=args.seed)
+    _write_json(result, args.output)
 
 
 def ud_command(args) -> None:
@@ -72,7 +103,9 @@ def analyze_command(args) -> None:
         row.setdefault("HDE", row.get("head_direction_entropy_weighted"))
         row.setdefault("ROE", row.get("relation_order_entropy_weighted"))
     results = [
-        correlations(rows, target, control_ttr=control) for target in ("HDE", "ROE") for control in (False, True)
+        correlations(rows, target, control_ttr=control)
+        for target in ("HDE", "ROE")
+        for control in (False, True)
     ]
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -106,6 +139,13 @@ def corpus_analysis_command(args) -> None:
 
 def disjoint_analysis_command(args) -> None:
     analyze_disjoint_study(args.results_dir, args.output_dir)
+def entropy_paper_command(args) -> None:
+    from .entropy_plotting import generate_entropy_artifacts
+
+    generate_entropy_artifacts(
+        args.ud_csv, args.entropy_dir, args.bakker, args.output_dir, use_tex=args.tex,
+        stability_csv=args.stability_csv
+    )
 
 
 def paper_command(args) -> None:
@@ -127,20 +167,27 @@ def build_parser() -> argparse.ArgumentParser:
 
     text_parser = commands.add_parser("text", help="Calculate F(lambda) from raw text")
     text_parser.add_argument("input")
-    text_parser.add_argument("--format", choices=("text", "lines", "tokenized"), default="text")
+    text_parser.add_argument(
+        "--format", choices=("text", "lines", "tokenized"), default="text"
+    )
     text_parser.add_argument(
         "--apply-splitter",
-        choices=("chinese", "japanese", "korean", "default"),
+        choices=("chinese", "japanese", "korean", "flores-spm", "default"),
         default="default",
-        help="Use this flag to select the tokenizer for Chinese, Japanese, or Korean text.",
+        help="Use this flag to split Chinese, Japanese, and Korean characters into separate tokens. \
+                             The flores-spm option uses the SentencePiece model trained on FLORES-200 data to tokenize all languages.",
     )
     text_parser.add_argument("--keep-case", action="store_true")
-    text_parser.add_argument("--pairs", action="store_true", help="Include qualifying pair-level values")
+    text_parser.add_argument(
+        "--pairs", action="store_true", help="Include qualifying pair-level values"
+    )
     text_parser.add_argument("--output")
     _add_metric_arguments(text_parser)
     text_parser.set_defaults(function=text_command)
 
-    ud_parser = commands.add_parser("ud", help="Calculate HDE, ROE, and F(lambda) from CoNLL-U")
+    ud_parser = commands.add_parser(
+        "ud", help="Calculate HDE, ROE, and F(lambda) from CoNLL-U"
+    )
     ud_parser.add_argument("inputs", nargs="+")
     ud_parser.add_argument("--sentences", type=int)
     ud_parser.add_argument("--pairs", action="store_true")
@@ -148,7 +195,35 @@ def build_parser() -> argparse.ArgumentParser:
     _add_metric_arguments(ud_parser)
     ud_parser.set_defaults(function=ud_command)
 
-    analysis_parser = commands.add_parser("analyze", help="Correlate flexibility with HDE and ROE")
+    entropy_parser = commands.add_parser(
+        "entropy", help="Sentence-level LZ entropy contrast and convergence"
+    )
+    entropy_parser.add_argument(
+        "input", help="Text file, CoNLL-U file, or treebank directory"
+    )
+    entropy_parser.add_argument(
+        "--format", choices=("text", "lines", "tokenized", "conllu"), default="lines"
+    )
+    entropy_parser.add_argument(
+        "--apply-splitter",
+        choices=("default", "chinese", "japanese", "korean", "flores-spm"),
+        default="default",
+    )
+    entropy_parser.add_argument(
+        "--keep-case", action="store_true", help="Text only; UD retains original case"
+    )
+    entropy_parser.add_argument("--sentences", type=int)
+    entropy_parser.add_argument("--repeats", type=int, default=100)
+    entropy_parser.add_argument("--seed", type=int, default=0)
+    entropy_parser.add_argument("--convergence", action="store_true")
+    entropy_parser.add_argument("--sizes", type=int, nargs="+")
+    entropy_parser.add_argument("--tolerance", type=float, default=0.1)
+    entropy_parser.add_argument("--output")
+    entropy_parser.set_defaults(function=entropy_command)
+
+    analysis_parser = commands.add_parser(
+        "analyze", help="Correlate flexibility with HDE and ROE"
+    )
     analysis_parser.add_argument(
         "input",
         help="CSV with language, flexibility, ttr, and the weighted entropy columns",
@@ -173,6 +248,23 @@ def build_parser() -> argparse.ArgumentParser:
     disjoint_parser.add_argument("results_dir", help="The disjoint-domain-study output directory")
     disjoint_parser.add_argument("--output-dir")
     disjoint_parser.set_defaults(function=disjoint_analysis_command)
+    entropy_paper = commands.add_parser(
+        "entropy-paper", help="Generate the four Delta H figures used in the paper from saved scores"
+    )
+    entropy_paper.add_argument("ud_csv", nargs="?", default="results/entropy/ud-paper-aligned/metrics.csv")
+    entropy_paper.add_argument(
+        "entropy_dir", nargs="?", default="results/entropy/ud-paper-aligned/curated",
+        help="Directory of per-language UD entropy JSON files"
+    )
+    entropy_paper.add_argument(
+        "--bakker", default="data/bakker-flexibility-metrics.csv"
+    )
+    entropy_paper.add_argument("--output-dir", default="results/entropy/ud-paper-aligned/paper-figures")
+    entropy_paper.add_argument("--stability-csv", help="Defaults to the stability/difference_scores_wide.csv beside the entropy directory")
+    entropy_paper.add_argument(
+        "--tex", action="store_true", help="Use the paper's LaTeX font rendering"
+    )
+    entropy_paper.set_defaults(function=entropy_paper_command)
 
     paper_parser = commands.add_parser("paper", help="Generate all paper artifacts")
     paper_parser.add_argument("results_dir", help="Experiment output directory")

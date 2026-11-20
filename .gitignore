@@ -7,4 +7,8 @@ __pycache__/
 dist/
 analysis/
 results/
+ud/
+
+data/flores_plus/
+
 datasets/

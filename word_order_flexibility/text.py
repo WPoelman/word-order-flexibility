@@ -7,16 +7,23 @@ from sacrebleu.tokenizers.tokenizer_intl import TokenizerV14International
 from sacrebleu.tokenizers.tokenizer_ja_mecab import TokenizerJaMecab
 from sacrebleu.tokenizers.tokenizer_ko_mecab import TokenizerKoMecab
 from sacrebleu.tokenizers.tokenizer_zh import TokenizerZh
+from sacrebleu.tokenizers.tokenizer_spm import Flores200Tokenizer
 
 WORD_RE = re.compile(r"[^\W_]+(?:[’'\-][^\W_]+)*", re.UNICODE)
 ASIAN_PUNCT = r"([\u3001\u3002\u3008-\u3011\u3014-\u301f\uff61-\uff65\u30fb])"
 FULL_WIDTH_PUNCT = r"([\uff0e\uff0c\uff1f\uff1a\uff1b\uff01\uff02\uff08\uff09])"
 SPLITTER_MAPPING = {
-    "chinese": TokenizerZh(),
-    "japanese": TokenizerJaMecab(),
-    "korean": TokenizerKoMecab(),
-    "default": TokenizerV14International(),
+    "chinese": TokenizerZh,
+    "japanese": TokenizerJaMecab,
+    "korean": TokenizerKoMecab,
+    "default": TokenizerV14International,
+    "flores-spm": Flores200Tokenizer,
 }
+
+
+@lru_cache(maxsize=None)
+def _get_tokenizer(name):
+    return SPLITTER_MAPPING[name]()
 
 
 def _remove_asian_punct(sent: str) -> str:
@@ -52,7 +59,7 @@ def segment_text(text: str) -> list[str]:
 
 def tokenize_text(text: str, *, lowercase: bool = True, apply_splitter: str = "default") -> list[list[str]]:
     sentences = []
-    tokenizer = SPLITTER_MAPPING[apply_splitter]
+    tokenizer = _get_tokenizer(apply_splitter)
     for segment in segment_text(text):
         segment = tokenizer(segment)
         if apply_splitter in {"chinese", "japanese", "korean"}:
@@ -69,7 +76,7 @@ def tokenize_text(text: str, *, lowercase: bool = True, apply_splitter: str = "d
 
 
 def tokenize_sentence(sentence: str, *, lowercase: bool = True, apply_splitter: str = "default") -> list[str]:
-    tokenizer = SPLITTER_MAPPING[apply_splitter]
+    tokenizer = _get_tokenizer(apply_splitter)
     sentence = tokenizer(sentence)
     if apply_splitter in {"chinese", "japanese", "korean"}:
         sentence = _remove_asian_punct(sentence)
