@@ -24,6 +24,7 @@ from .plotting import (
     _validation_panel,
     _blank_correlation_diagonal,
     bakker_figures,
+    appendix_table,
     correlation,
 )
 
@@ -222,7 +223,7 @@ def generate_entropy_artifacts(
     use_tex: bool = False,
     stability_csv: str | None = None,
 ) -> None:
-    """Render the paper's validation, Bakker, and two 70–100% stability figures."""
+    """Render the four entropy figures and the full language-level metrics table."""
     frame, _, metadata = load_entropy_ud(ud_csv, entropy_dir)
     if metadata["missing_entropy"] or metadata["entropy_only"]:
         raise ValueError("UD metrics and entropy results must cover exactly the same languages")
@@ -236,6 +237,8 @@ def generate_entropy_artifacts(
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
     frame.to_csv(output / "language_metrics.csv", index=False)
+    bakker = pd.read_csv(bakker_csv)
+    appendix_table(frame, bakker, output)
     correlations = []
     for group, data in [("all_ud", frame), ("futrell_language_subset", subset)]:
         for target in ["HDE", "ROE", *[f"F_lambda_{int(d * 100):03d}" for d in DECAYS]]:
@@ -248,7 +251,7 @@ def generate_entropy_artifacts(
         _plot_hde(frame, subset, output)
         bakker_figures(
             frame,
-            pd.read_csv(bakker_csv),
+            bakker,
             output,
             metric=METRIC,
             metric_label=LABEL,
@@ -261,6 +264,7 @@ def generate_entropy_artifacts(
         futrell_languages=subset.Language.tolist(),
         stability_csv=str(stability_path.resolve()),
         figure_files=[f"{stem}.{extension}" for stem in FIGURE_STEMS for extension in ("pdf", "png")],
+        table_files=["appendix-language-metrics-table.tex"],
         stability_note="70/80/90/100% nested samples; 100% reuses 20 of the 100 saved trials, not their 100-trial mean.",
     )
     (output / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")

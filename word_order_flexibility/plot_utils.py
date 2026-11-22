@@ -64,3 +64,27 @@ def format_decimal(value: float) -> str:
 
 def apply_paper_style() -> None:
     mpl.rcParams.update(paper_style())
+
+
+def add_y_axis_break(ax) -> None:
+    """Draw a small zigzag near the foot of a truncated left axis."""
+    spine = ax.spines["left"]
+    style = dict(transform=ax.transAxes, clip_on=False, scalex=False, scaley=False)
+    ax.plot(
+        [0, 0],
+        [0.015, 0.075],
+        color=ax.get_facecolor(),
+        linewidth=3,
+        solid_capstyle="butt",
+        zorder=10,
+        **style,
+    )
+    ax.plot(
+        [0, -0.012, 0.012, -0.012, 0],
+        [0.015, 0.03, 0.045, 0.06, 0.075],
+        color=spine.get_edgecolor(),
+        linewidth=spine.get_linewidth(),
+        solid_capstyle="butt",
+        zorder=11,
+        **style,
+    )

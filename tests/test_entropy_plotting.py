@@ -23,6 +23,7 @@ def fixture_inputs(tmp_path):
                 F_lambda_050=0.3,
                 F_lambda_075=0.4,
                 F_lambda_100=0.5,
+                qualifying_pairs_lambda_050=10 + index,
             )
         )
         score = {
@@ -84,6 +85,29 @@ def test_entropy_paper_defaults():
     assert args.entropy_dir.endswith("/ud-paper-aligned/curated")
     assert args.output_dir.endswith("/paper-figures")
     assert args.stability_csv is None
+
+
+def test_entropy_artifacts_include_full_table(tmp_path, monkeypatch):
+    from word_order_flexibility import entropy_plotting as plotting
+
+    path, folder = fixture_inputs(tmp_path)
+    monkeypatch.setattr(plotting, "FUTRELL_LANGUAGE_NAMES", ["Alpha", "Beta", "Gamma"])
+    for name in ("_plot_hde", "bakker_figures", "_plot_stability_values", "_plot_stability_correlations"):
+        monkeypatch.setattr(plotting, name, lambda *args, **kwargs: None)
+    stability = tmp_path / "stability.csv"
+    pd.DataFrame({
+        "language": ["Alpha", "Beta", "Gamma"],
+        **{size: [-0.1, -0.2, -0.3] for size in ("70", "80", "90", "100")},
+    }).to_csv(stability, index=False)
+    bakker = tmp_path / "bakker.csv"
+    pd.DataFrame({"Language": ["Alpha"], "Flexibility": [0.5]}).to_csv(bakker, index=False)
+    output = tmp_path / "output"
+    plotting.generate_entropy_artifacts(path, folder, bakker, output, stability_csv=stability)
+    table = output / "appendix-language-metrics-table.tex"
+    assert r"$\Delta H$" in table.read_text()
+    assert all(name in table.read_text() for name in ("Alpha", "Beta", "Gamma"))
+    metadata = json.loads((output / "metadata.json").read_text())
+    assert metadata["table_files"] == [table.name]
 
 
 def test_stability_requires_same_languages(tmp_path):

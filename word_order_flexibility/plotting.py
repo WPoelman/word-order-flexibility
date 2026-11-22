@@ -1083,6 +1083,7 @@ def appendix_table(
         ("Bakker", "Bak."),
         ("HDE", "HDE"),
         ("ROE", "ROE"),
+        *([("entropy_difference", r"$\Delta H$")] if "entropy_difference" in table else []),
         ("F_lambda_025", r"$F^{(.25)}$"),
         ("F_lambda_050", r"$F^{(.5)}$"),
         ("F_lambda_075", r"$F^{(.75)}$"),
@@ -1114,8 +1115,12 @@ def appendix_table(
         (
             r"\caption{Language-level metrics. Colors are scaled independently within each "
             r"column around its mean: red indicates lower values and green higher values. "
-            r"Missing Bakker ratings are marked as unavailable.}"
-            r"\label{tab:appendix-language-metrics}\\"
+            r"Missing values are marked as unavailable."
+            + (
+                r" $\Delta H$ is intact minus within-sentence shuffled entropy, in bits/token."
+                if "entropy_difference" in table else ""
+            )
+            + r"}\label{tab:appendix-language-metrics}\\"
         ),
         r"\toprule",
         header,
@@ -1152,11 +1157,21 @@ def generate_paper_artifacts(
     output_dir: str,
     common_corpus_languages_csv: str | None = None,
     disjoint_languages_csv: str | None = None,
+    *,
+    entropy_dir: str | None = None,
 ) -> None:
     _set_style()
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    all_results = pd.read_csv(all_csv)
+    entropy_metadata = None
+    if entropy_dir is None:
+        all_results = pd.read_csv(all_csv)
+    else:
+        from .entropy_plotting import load_entropy_ud
+
+        all_results, _, entropy_metadata = load_entropy_ud(all_csv, entropy_dir)
+        if entropy_metadata["missing_entropy"] or entropy_metadata["entropy_only"]:
+            raise ValueError("UD metrics and entropy results must cover exactly the same languages")
     futrell = all_results[all_results.Language.isin(FUTRELL_LANGUAGE_NAMES)].copy()
     if set(futrell.Language) != set(FUTRELL_LANGUAGE_NAMES):
         missing = sorted(set(FUTRELL_LANGUAGE_NAMES) - set(futrell.Language))
@@ -1183,6 +1198,8 @@ def generate_paper_artifacts(
         "sentence_size_languages": sizes.Language.nunique(),
         "sentence_sizes": sorted(sizes.n_sentences.unique().tolist()),
     }
+    if entropy_metadata is not None:
+        metadata["entropy"] = entropy_metadata
     (output / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
 
 

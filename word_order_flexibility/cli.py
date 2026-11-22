@@ -158,6 +158,7 @@ def paper_command(args) -> None:
         str(output),
         str(root / "corpus-analysis" / "common_corpus_languages.csv"),
         str(root / "disjoint-domain-study" / "analysis" / "languages.csv"),
+        entropy_dir=args.entropy_dir,
     )
 
 
@@ -249,7 +250,7 @@ def build_parser() -> argparse.ArgumentParser:
     disjoint_parser.add_argument("--output-dir")
     disjoint_parser.set_defaults(function=disjoint_analysis_command)
     entropy_paper = commands.add_parser(
-        "entropy-paper", help="Generate the four Delta H figures used in the paper from saved scores"
+        "entropy-paper", help="Generate the Delta H figures and full metrics table from saved scores"
     )
     entropy_paper.add_argument("ud_csv", nargs="?", default="results/entropy/ud-paper-aligned/metrics.csv")
     entropy_paper.add_argument(
@@ -274,6 +275,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Bakker ratings CSV",
     )
     paper_parser.add_argument("--output-dir", help="Default: RESULTS_DIR/paper")
+    paper_parser.add_argument(
+        "--entropy-dir",
+        help="Per-language UD entropy JSON directory; adds Delta H to the metrics table after sample validation",
+    )
     paper_parser.set_defaults(function=paper_command)
     return parser
 
